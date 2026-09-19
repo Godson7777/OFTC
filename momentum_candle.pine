@@ -40,12 +40,12 @@ strategy(
 // =============================================================================
 //  TAHAP 1 - DEFINISI PARAMETER INPUT
 // =============================================================================
-var string G_TF   = "TAHAP 1a · Timeframe"
-var string G_SIG  = "TAHAP 1b · Filter Sinyal"
-var string G_ATR  = "TAHAP 2 · Definisi ATR"
-var string G_LVL  = "TAHAP 5 · Entry / Stop Loss / Take Profit"
-var string G_INV  = "TAHAP 6 · Mesin Pembatalan"
-var string G_MM   = "TAHAP 7 · Money Management"
+var string G_TF   = "TAHAP 1a - Timeframe"
+var string G_SIG  = "TAHAP 1b - Filter Sinyal"
+var string G_ATR  = "TAHAP 2 - Definisi ATR"
+var string G_LVL  = "TAHAP 5 - Entry / Stop Loss / Take Profit"
+var string G_INV  = "TAHAP 6 - Mesin Pembatalan"
+var string G_MM   = "TAHAP 7 - Money Management"
 var string G_VIZ  = "Tampilan"
 
 // --- Timeframe ---------------------------------------------------------------
@@ -83,15 +83,15 @@ i_atrMode   = input.string("High-Low (literal SOP)", "Metode perhitungan ATR",
 // --- Level harga (Tahap 5) ----------------------------------------------------
 i_fibEntry  = input.float(0.236, "Fibo Entry (retracement)", minval = 0.0, maxval = 0.95, step = 0.001, group = G_LVL,
      tooltip = "BUY  : Entry = Sig_High - nilai * Range_Sig\nSELL : Entry = Sig_Low  + nilai * Range_Sig")
-i_slMode    = input.string("Sig_Low/High ± ATR (SOP)", "Metode Stop Loss",
-     options = ["Sig_Low/High ± ATR (SOP)", "Entry ± ATR (ketat)"], group = G_LVL,
+i_slMode    = input.string("Sig_Low/High +/- ATR (SOP)", "Metode Stop Loss",
+     options = ["Sig_Low/High +/- ATR (SOP)", "Entry +/- ATR (ketat)"], group = G_LVL,
      tooltip = "SOP   : SL di luar ekor candle sinyal + buffer ATR. Risiko besar, RR sulit.\n" +
                "Ketat : SL diukur dari Entry + buffer ATR. Risiko jauh lebih kecil, TP lebih dekat.")
 i_slAtr     = input.float(0.5, "Pengali ATR untuk buffer SL", minval = 0.0, step = 0.1, group = G_LVL)
 i_tpMode    = input.string("RR Target", "Metode Take Profit",
      options = ["RR Target", "Fibo Extension (SOP)", "Terjauh dari keduanya"], group = G_LVL,
-     tooltip = "RR Target          : TP = Entry ± (Target RR × Risk). Menjamin RR selalu tepat sebesar Target RR.\n" +
-               "Fibo Extension     : TP = Sig_High + nilai × Range_Sig (SOP asli). RR hasilnya 0.46 – 0.66, akan ditolak filter RR.\n" +
+     tooltip = "RR Target          : TP = Entry +/- (Target RR x Risk). Menjamin RR selalu tepat sebesar Target RR.\n" +
+               "Fibo Extension     : TP = Sig_High + nilai x Range_Sig (SOP asli). RR hasilnya 0.46 - 0.66, akan ditolak filter RR.\n" +
                "Terjauh dari keduanya : ambil mana pun yang lebih jauh, sehingga RR >= Target RR dan bisa lebih tinggi.")
 i_rrTarget  = input.float(2.0, "Target RR", minval = 0.1, step = 0.1, group = G_LVL,
      tooltip = "Rasio Reward : Risk yang dipakai mode 'RR Target'. Default 2.0 = 1:2.")
@@ -109,7 +109,7 @@ i_cancelSL  = input.bool(true, "Batalkan bila SL tertembus sebelum Entry", group
 
 // --- Money management (Tahap 7) ----------------------------------------------
 i_useRisk   = input.bool(true, "Position sizing berbasis risiko", group = G_MM,
-     tooltip = "Qty = (Equity × Risk %) / jarak Entry ke Stop Loss.")
+     tooltip = "Qty = (Equity x Risk %) / jarak Entry ke Stop Loss.")
 i_riskPct   = input.float(1.0, "Risiko per transaksi (%)", minval = 0.01, maxval = 100.0, step = 0.1, group = G_MM)
 i_fixedQty  = input.float(1.0, "Qty tetap (bila sizing dimatikan)", minval = 0.000001, group = G_MM)
 i_minRR     = input.float(2.0, "Filter RR minimum", minval = 0.0, step = 0.1, group = G_MM,
@@ -207,7 +207,7 @@ if armSignal
     e = dir == 1 ? sH - i_fibEntry * rg : sL + i_fibEntry * rg
 
     // Stop Loss (Tahap 5, dengan opsi anchor)
-    anchor = i_slMode == "Entry ± ATR (ketat)" ? e : (dir == 1 ? sL : sH)
+    anchor = i_slMode == "Entry +/- ATR (ketat)" ? e : (dir == 1 ? sL : sH)
     s = dir == 1 ? anchor - i_slAtr * atrVal : anchor + i_slAtr * atrVal
 
     riskUnit = math.abs(e - s)
