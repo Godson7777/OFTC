@@ -19,6 +19,12 @@
 //  Karena itu TP Mode default adalah "RR Target" (TP = Entry +/- RR * Risk),
 //  yang menjamin RR >= i_rrTarget pada setiap trade. TP Fibo 0.27 tetap
 //  disediakan sebagai opsi untuk mereplikasi SOP asli secara harfiah.
+//
+//  BIAYA TRANSAKSI: commission dan slippage sengaja diset 0 di sini, karena
+//  angkanya berbeda jauh antar instrumen dan broker. Isi sendiri lewat tab
+//  Properties di Strategy Tester. Backtest tanpa biaya SELALU terlihat lebih
+//  bagus daripada hasil sebenarnya - lihat backtest/REPORT.md, di mana selisih
+//  asumsi biaya saja mengubah Profit Factor dari 1.02 menjadi 0.82.
 // =============================================================================
 
 strategy(
@@ -32,8 +38,8 @@ strategy(
      calc_on_every_tick      = false,
      process_orders_on_close = false,
      commission_type         = strategy.commission.percent,
-     commission_value        = 0.04,
-     slippage                = 1,
+     commission_value        = 0.0,
+     slippage                = 0,
      margin_long             = 0,
      margin_short            = 0)
 
