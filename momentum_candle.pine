@@ -1,0 +1,344 @@
+//@version=6
+// =============================================================================
+//  MOMENTUM CANDLE
+// =============================================================================
+//  Implementasi penuh SOP "High-Precision Rules" Tahap 1 - 7.
+//
+//  PRINSIP: tidak ada satu pun angka atau keputusan yang di-hardcode secara
+//  diam-diam. Setiap titik yang di SOP masih ambigu diangkat menjadi input
+//  eksplisit, sehingga hasil backtest selalu bisa direproduksi.
+//
+//  CATATAN MATEMATIS (WAJIB DIBACA):
+//  Dengan Entry = Fibo 0.236 dan SL = Sig_Low - 0.5*ATR, maka untuk BUY:
+//      Reward(Fibo 0.27) = 0.506 * R
+//      Risk              = 0.764 * R + 0.5 * ATR
+//  Karena Tahap 3 mensyaratkan R > 1.5 * ATR, maka 0.5*ATR < 0.333*R sehingga:
+//      Risk berada di rentang (0.764*R , 1.097*R)
+//      RR   berada di rentang (0.461   , 0.662  )
+//  Artinya TP Fibo 0.27 TIDAK PERNAH bisa mencapai RR 1:1.5, apalagi 1:2.
+//  Karena itu TP Mode default adalah "RR Target" (TP = Entry +/- RR * Risk),
+//  yang menjamin RR >= i_rrTarget pada setiap trade. TP Fibo 0.27 tetap
+//  disediakan sebagai opsi untuk mereplikasi SOP asli secara harfiah.
+// =============================================================================
+
+strategy(
+     title                   = "Momentum Candle",
+     shorttitle              = "MOMENTUM CANDLE",
+     overlay                 = true,
+     initial_capital         = 10000,
+     default_qty_type        = strategy.fixed,
+     default_qty_value       = 1,
+     pyramiding              = 0,
+     calc_on_every_tick      = false,
+     process_orders_on_close = false,
+     commission_type         = strategy.commission.percent,
+     commission_value        = 0.04,
+     slippage                = 1,
+     margin_long             = 0,
+     margin_short            = 0)
+
+// =============================================================================
+//  TAHAP 1 - DEFINISI PARAMETER INPUT
+// =============================================================================
+var string G_TF   = "TAHAP 1a · Timeframe"
+var string G_SIG  = "TAHAP 1b · Filter Sinyal"
+var string G_ATR  = "TAHAP 2 · Definisi ATR"
+var string G_LVL  = "TAHAP 5 · Entry / Stop Loss / Take Profit"
+var string G_INV  = "TAHAP 6 · Mesin Pembatalan"
+var string G_MM   = "TAHAP 7 · Money Management"
+var string G_VIZ  = "Tampilan"
+
+// --- Timeframe ---------------------------------------------------------------
+i_reqTF     = input.timeframe("15", "Timeframe wajib", group = G_TF,
+     tooltip = "SOP merekomendasikan M15. Strategi hanya membuka sinyal baru bila chart berada di timeframe ini.")
+i_enforceTF = input.bool(true, "Kunci strategi ke timeframe wajib", group = G_TF,
+     tooltip = "ON  = sinyal dibekukan bila chart bukan timeframe wajib (sesuai SOP).\nOFF = strategi berjalan di timeframe apa pun.")
+
+// --- Filter sinyal (Tahap 1 & 3) ---------------------------------------------
+i_lookback  = input.int(20, "Periode Baseline (Lookback)", minval = 2, group = G_SIG,
+     tooltip = "Jumlah candle untuk menghitung rata-rata ATR dan rata-rata Volume.")
+i_sizeMult  = input.float(1.5, "Pengali Ukuran Candle (Size_Multiplier)", minval = 0.0, step = 0.1, group = G_SIG,
+     tooltip = "Syarat: Total Range > ATR * nilai ini. Mendeteksi 'ledakan' dari kumpulan candle kecil.")
+i_bodyMin   = input.float(0.75, "Batas Minimal Body (Body_Min)", minval = 0.0, maxval = 1.0, step = 0.01, group = G_SIG,
+     tooltip = "Syarat: Body Range >= Total Range * nilai ini.")
+i_wickMax   = input.float(0.10, "Filter Ekor Penolakan (Wick_Max)", minval = 0.0, maxval = 1.0, step = 0.01, group = G_SIG,
+     tooltip = "Bullish: Lower Wick <= Total Range * nilai ini.\nBearish: Upper Wick <= Total Range * nilai ini.")
+i_useVol    = input.bool(true, "Aktifkan filter volume", group = G_SIG,
+     tooltip = "Matikan untuk simbol tanpa data volume yang andal (mis. sebagian pair forex spot).")
+i_volMult   = input.float(1.5, "Pengali Volume (Vol_Multiplier)", minval = 0.0, step = 0.1, group = G_SIG,
+     tooltip = "Syarat: Volume > rata-rata Volume * nilai ini.")
+i_useEma    = input.bool(true, "Aktifkan filter tren EMA", group = G_SIG)
+i_emaLen    = input.int(50, "Filter Tren (EMA)", minval = 1, group = G_SIG,
+     tooltip = "Bullish butuh Close > EMA. Bearish butuh Close < EMA.")
+i_dirMode   = input.string("Keduanya", "Arah yang diizinkan", options = ["Keduanya", "Hanya Long", "Hanya Short"], group = G_SIG)
+
+// --- Definisi ATR (ambiguitas Tahap 2) ---------------------------------------
+i_atrMode   = input.string("High-Low (literal SOP)", "Metode perhitungan ATR",
+     options = ["High-Low (literal SOP)", "True Range (ta.atr)"], group = G_ATR,
+     tooltip = "SOP Tahap 2 mendefinisikan TR = High - Low lalu menyebut rata-ratanya 'ATR'.\n" +
+               "High-Low  = rata-rata (High - Low), persis seperti tertulis di SOP.\n" +
+               "True Range = ta.atr() standar, ikut memperhitungkan gap terhadap close sebelumnya.\n" +
+               "Nilai ini dipakai di filter ukuran candle DAN di perhitungan Stop Loss.")
+
+// --- Level harga (Tahap 5) ----------------------------------------------------
+i_fibEntry  = input.float(0.236, "Fibo Entry (retracement)", minval = 0.0, maxval = 0.95, step = 0.001, group = G_LVL,
+     tooltip = "BUY  : Entry = Sig_High - nilai * Range_Sig\nSELL : Entry = Sig_Low  + nilai * Range_Sig")
+i_slMode    = input.string("Sig_Low/High ± ATR (SOP)", "Metode Stop Loss",
+     options = ["Sig_Low/High ± ATR (SOP)", "Entry ± ATR (ketat)"], group = G_LVL,
+     tooltip = "SOP   : SL di luar ekor candle sinyal + buffer ATR. Risiko besar, RR sulit.\n" +
+               "Ketat : SL diukur dari Entry + buffer ATR. Risiko jauh lebih kecil, TP lebih dekat.")
+i_slAtr     = input.float(0.5, "Pengali ATR untuk buffer SL", minval = 0.0, step = 0.1, group = G_LVL)
+i_tpMode    = input.string("RR Target", "Metode Take Profit",
+     options = ["RR Target", "Fibo Extension (SOP)", "Terjauh dari keduanya"], group = G_LVL,
+     tooltip = "RR Target          : TP = Entry ± (Target RR × Risk). Menjamin RR selalu tepat sebesar Target RR.\n" +
+               "Fibo Extension     : TP = Sig_High + nilai × Range_Sig (SOP asli). RR hasilnya 0.46 – 0.66, akan ditolak filter RR.\n" +
+               "Terjauh dari keduanya : ambil mana pun yang lebih jauh, sehingga RR >= Target RR dan bisa lebih tinggi.")
+i_rrTarget  = input.float(2.0, "Target RR", minval = 0.1, step = 0.1, group = G_LVL,
+     tooltip = "Rasio Reward : Risk yang dipakai mode 'RR Target'. Default 2.0 = 1:2.")
+i_fibTP     = input.float(0.27, "Fibo Extension TP", minval = 0.0, step = 0.001, group = G_LVL,
+     tooltip = "BUY  : TP = Sig_High + nilai * Range_Sig\nSELL : TP = Sig_Low  - nilai * Range_Sig")
+
+// --- Mesin pembatalan (Tahap 6) ----------------------------------------------
+i_expBars   = input.int(5, "Batas Kedaluwarsa Sinyal (Exp_Candles)", minval = 1, group = G_INV,
+     tooltip = "Jumlah candle setelah candle sinyal. Bila Entry belum terisi, pending order dibatalkan.")
+i_cancelTP  = input.bool(true, "Batalkan bila TP tersentuh sebelum Entry", group = G_INV,
+     tooltip = "Tahap 6 rule 2 ('terbang duluan'). Aktif hanya bila bar menyentuh TP TANPA pernah menyentuh Entry.")
+i_cancelSL  = input.bool(true, "Batalkan bila SL tertembus sebelum Entry", group = G_INV,
+     tooltip = "Tahap 6 rule 3. Secara geometris ini hanya mungkin terjadi lewat gap, karena SL selalu berada " +
+               "di seberang Entry. Kondisi dinilai saat pending order belum terisi.")
+
+// --- Money management (Tahap 7) ----------------------------------------------
+i_useRisk   = input.bool(true, "Position sizing berbasis risiko", group = G_MM,
+     tooltip = "Qty = (Equity × Risk %) / jarak Entry ke Stop Loss.")
+i_riskPct   = input.float(1.0, "Risiko per transaksi (%)", minval = 0.01, maxval = 100.0, step = 0.1, group = G_MM)
+i_fixedQty  = input.float(1.0, "Qty tetap (bila sizing dimatikan)", minval = 0.000001, group = G_MM)
+i_minRR     = input.float(2.0, "Filter RR minimum", minval = 0.0, step = 0.1, group = G_MM,
+     tooltip = "Sinyal dilewati bila Reward/Risk < nilai ini. Default 2.0 sesuai permintaan minimal 1:2.\n" +
+               "PERINGATAN: dengan TP Mode 'Fibo Extension (SOP)', RR maksimum secara matematis hanya 0.662, " +
+               "sehingga filter ini akan memblokir 100% sinyal. Itu perilaku yang benar, bukan bug.")
+
+// --- Tampilan ------------------------------------------------------------------
+i_showEma   = input.bool(true,  "Tampilkan EMA",            group = G_VIZ)
+i_showLvl   = input.bool(true,  "Tampilkan level Entry/SL/TP", group = G_VIZ)
+i_showMark  = input.bool(true,  "Tampilkan penanda sinyal", group = G_VIZ)
+i_showTable = input.bool(true,  "Tampilkan panel status",   group = G_VIZ)
+
+// =============================================================================
+//  TAHAP 2 - KALKULASI ANATOMI CANDLE
+// =============================================================================
+totalRange = high - low                       // TR
+bodyRange  = math.abs(close - open)           // BR
+upperWick  = high - math.max(close, open)     // UW
+lowerWick  = math.min(close, open) - low      // LW
+
+atrVal = i_atrMode == "True Range (ta.atr)" ? ta.atr(i_lookback) : ta.sma(high - low, i_lookback)
+avgVol = ta.sma(volume, i_lookback)
+emaVal = ta.ema(close, i_emaLen)
+
+tfOk       = not i_enforceTF or timeframe.period == i_reqTF
+warmupOk   = bar_index >= math.max(i_lookback, i_emaLen)
+dataOk     = totalRange > 0 and not na(atrVal) and atrVal > 0
+
+// =============================================================================
+//  TAHAP 3 - SYARAT VALIDASI MUTLAK
+// =============================================================================
+condSize = totalRange > atrVal * i_sizeMult
+condBody = bodyRange >= totalRange * i_bodyMin
+condVol  = not i_useVol or (not na(volume) and not na(avgVol) and volume > avgVol * i_volMult)
+
+baseOk = dataOk and warmupOk and condSize and condBody and condVol and barstate.isconfirmed
+
+longAllowed  = i_dirMode != "Hanya Short"
+shortAllowed = i_dirMode != "Hanya Long"
+
+bullSignal = baseOk and longAllowed  and close > open and (not i_useEma or close > emaVal) and lowerWick <= totalRange * i_wickMax
+bearSignal = baseOk and shortAllowed and close < open and (not i_useEma or close < emaVal) and upperWick <= totalRange * i_wickMax
+
+// =============================================================================
+//  STATE MACHINE (Tahap 4 + Tahap 6)
+// =============================================================================
+//  tradeActive = true  -> sistem mengabaikan semua candle momentum baru
+//  pending     = true  -> limit order sudah dipasang tetapi belum terisi
+var bool  tradeActive = false
+var bool  pending     = false
+var int   tradeDir    = 0        //  1 = long, -1 = short
+var float sigHigh     = na
+var float sigLow      = na
+var float rangeSig    = na
+var float lvlEntry    = na
+var float lvlStop     = na
+var float lvlTarget   = na
+var float lvlRR       = na
+var int   sigBar      = na
+
+ID_LONG  = "MC-Long"
+ID_SHORT = "MC-Short"
+
+// --- Deteksi pengisian order: pending -> posisi terbuka -----------------------
+if pending and strategy.position_size != 0
+    pending := false
+
+// --- Deteksi posisi tertutup: bebaskan state machine --------------------------
+if tradeActive and not pending and strategy.position_size == 0 and bar_index > sigBar
+    tradeActive := false
+    tradeDir    := 0
+    sigHigh     := na
+    sigLow      := na
+    rangeSig    := na
+    lvlEntry    := na
+    lvlStop     := na
+    lvlTarget   := na
+    lvlRR       := na
+
+// =============================================================================
+//  TAHAP 4 + 5 - PEMETAAN HARGA & PEMASANGAN ORDER
+// =============================================================================
+var int skippedRR = 0
+
+armSignal = tfOk and not tradeActive and strategy.position_size == 0 and (bullSignal or bearSignal)
+
+if armSignal
+    dir = bullSignal ? 1 : -1
+    sH  = high
+    sL  = low
+    rg  = sH - sL
+
+    // Entry (Tahap 5)
+    e = dir == 1 ? sH - i_fibEntry * rg : sL + i_fibEntry * rg
+
+    // Stop Loss (Tahap 5, dengan opsi anchor)
+    anchor = i_slMode == "Entry ± ATR (ketat)" ? e : (dir == 1 ? sL : sH)
+    s = dir == 1 ? anchor - i_slAtr * atrVal : anchor + i_slAtr * atrVal
+
+    riskUnit = math.abs(e - s)
+
+    // Take Profit (Tahap 5, dengan opsi mode)
+    tpFib = dir == 1 ? sH + i_fibTP * rg : sL - i_fibTP * rg
+    tpRR  = dir == 1 ? e + i_rrTarget * riskUnit : e - i_rrTarget * riskUnit
+    t = switch i_tpMode
+        "RR Target"            => tpRR
+        "Fibo Extension (SOP)" => tpFib
+        => dir == 1 ? math.max(tpFib, tpRR) : math.min(tpFib, tpRR)
+
+    rewardUnit = math.abs(t - e)
+    rr = riskUnit > 0 ? rewardUnit / riskUnit : 0.0
+
+    // --- Tahap 7: sizing berbasis risiko ------------------------------------
+    qty = i_useRisk and riskUnit > 0 ? (strategy.equity * i_riskPct / 100.0) / riskUnit : i_fixedQty
+
+    // --- Validasi geometri: TP dan SL harus berada di sisi yang benar --------
+    geometryOk = rg > 0 and riskUnit > 0 and (dir == 1 ? (t > e and s < e) : (t < e and s > e))
+
+    if geometryOk and rr >= i_minRR and qty > 0
+        tradeActive := true
+        pending     := true
+        tradeDir    := dir
+        sigHigh     := sH
+        sigLow      := sL
+        rangeSig    := rg
+        lvlEntry    := e
+        lvlStop     := s
+        lvlTarget   := t
+        lvlRR       := rr
+        sigBar      := bar_index
+
+        if dir == 1
+            strategy.entry(ID_LONG, strategy.long, qty, limit = e,
+                 comment = "BUY LIMIT", alert_message = "Momentum Candle: BUY LIMIT terpasang")
+        else
+            strategy.entry(ID_SHORT, strategy.short, qty, limit = e,
+                 comment = "SELL LIMIT", alert_message = "Momentum Candle: SELL LIMIT terpasang")
+    else if rr < i_minRR and geometryOk
+        skippedRR := skippedRR + 1
+
+// =============================================================================
+//  TAHAP 6 - MESIN PEMBATALAN OTOMATIS
+// =============================================================================
+//  Blok ini hanya dievaluasi saat pending order BELUM terisi. Bila Entry dan TP
+//  tersentuh pada bar yang sama, broker emulator TradingView mengisi Entry lebih
+//  dulu (Entry selalu lebih dekat ke harga berjalan daripada TP), sehingga
+//  strategy.position_size != 0 dan blok ini tidak dijalankan. Dengan begitu
+//  penyelesaian urutan intrabar bersifat deterministik, bukan asumsi.
+if pending and strategy.position_size == 0 and bar_index > sigBar
+    barsElapsed = bar_index - sigBar
+
+    touchedEntry = tradeDir == 1 ? low  <= lvlEntry  : high >= lvlEntry
+    touchedTP    = tradeDir == 1 ? high >= lvlTarget : low  <= lvlTarget
+    touchedSL    = tradeDir == 1 ? low  <= lvlStop   : high >= lvlStop
+
+    ruleTimeout = barsElapsed >= i_expBars                       // Tahap 6 rule 1
+    ruleTPFirst = i_cancelTP and touchedTP and not touchedEntry  // Tahap 6 rule 2
+    ruleSLFirst = i_cancelSL and touchedSL                       // Tahap 6 rule 3 (hanya mungkin via gap)
+
+    if ruleTimeout or ruleTPFirst or ruleSLFirst
+        strategy.cancel(ID_LONG)
+        strategy.cancel(ID_SHORT)
+        reason = ruleSLFirst ? "SL tertembus lebih dulu (gap)" : ruleTPFirst ? "TP tercapai lebih dulu" : "Kedaluwarsa"
+        alert("Momentum Candle: pending order dibatalkan - " + reason, alert.freq_once_per_bar_close)
+        tradeActive := false
+        pending     := false
+        tradeDir    := 0
+        sigHigh     := na
+        sigLow      := na
+        rangeSig    := na
+        lvlEntry    := na
+        lvlStop     := na
+        lvlTarget   := na
+        lvlRR       := na
+
+// =============================================================================
+//  PEMASANGAN TP / SL SIMULTAN (OCA otomatis via strategy.exit)
+// =============================================================================
+if tradeActive and not na(lvlStop) and not na(lvlTarget)
+    if tradeDir == 1
+        strategy.exit("MC-Exit-L", from_entry = ID_LONG, stop = lvlStop, limit = lvlTarget,
+             comment_profit = "TP", comment_loss = "SL")
+    else if tradeDir == -1
+        strategy.exit("MC-Exit-S", from_entry = ID_SHORT, stop = lvlStop, limit = lvlTarget,
+             comment_profit = "TP", comment_loss = "SL")
+
+// =============================================================================
+//  VISUALISASI
+// =============================================================================
+plot(i_showEma ? emaVal : na, "EMA Tren", color = color.new(color.orange, 0), linewidth = 2)
+
+showLevels = i_showLvl and tradeActive
+plot(showLevels ? lvlEntry  : na, "Entry", color = color.new(color.blue,   0), linewidth = 1, style = plot.style_linebr)
+plot(showLevels ? lvlStop   : na, "Stop Loss", color = color.new(color.red, 0), linewidth = 1, style = plot.style_linebr)
+plot(showLevels ? lvlTarget : na, "Take Profit", color = color.new(color.green, 0), linewidth = 1, style = plot.style_linebr)
+
+plotshape(i_showMark and bullSignal, "Sinyal Bullish", shape.triangleup,   location.belowbar, color.new(color.green, 0), size = size.small)
+plotshape(i_showMark and bearSignal, "Sinyal Bearish", shape.triangledown, location.abovebar, color.new(color.red,   0), size = size.small)
+
+barcolor(i_showMark and bullSignal ? color.new(color.lime, 0) : i_showMark and bearSignal ? color.new(color.fuchsia, 0) : na)
+
+// --- Panel status ------------------------------------------------------------
+if i_showTable and barstate.islast
+    var table panel = table.new(position.top_right, 2, 9, border_width = 1)
+    stateTxt = not tfOk ? "TIMEFRAME SALAH" : strategy.position_size != 0 ? "POSISI TERBUKA" : pending ? "PENDING ORDER" : "MENUNGGU SINYAL"
+    stateCol = not tfOk ? color.new(color.red, 0) : strategy.position_size != 0 ? color.new(color.green, 30) : pending ? color.new(color.blue, 30) : color.new(color.gray, 30)
+
+    table.cell(panel, 0, 0, "MOMENTUM CANDLE", bgcolor = color.new(color.black, 0), text_color = color.white)
+    table.cell(panel, 1, 0, timeframe.period, bgcolor = color.new(color.black, 0), text_color = color.white)
+    table.cell(panel, 0, 1, "Status", text_color = color.white, bgcolor = color.new(color.gray, 60))
+    table.cell(panel, 1, 1, stateTxt, text_color = color.white, bgcolor = stateCol)
+    table.cell(panel, 0, 2, "Arah",   text_color = color.white, bgcolor = color.new(color.gray, 60))
+    table.cell(panel, 1, 2, tradeDir == 1 ? "LONG" : tradeDir == -1 ? "SHORT" : "-", text_color = color.white, bgcolor = color.new(color.gray, 60))
+    table.cell(panel, 0, 3, "Entry",  text_color = color.white, bgcolor = color.new(color.gray, 60))
+    table.cell(panel, 1, 3, na(lvlEntry) ? "-" : str.tostring(lvlEntry, format.mintick), text_color = color.white, bgcolor = color.new(color.gray, 60))
+    table.cell(panel, 0, 4, "Stop Loss", text_color = color.white, bgcolor = color.new(color.gray, 60))
+    table.cell(panel, 1, 4, na(lvlStop) ? "-" : str.tostring(lvlStop, format.mintick), text_color = color.white, bgcolor = color.new(color.gray, 60))
+    table.cell(panel, 0, 5, "Take Profit", text_color = color.white, bgcolor = color.new(color.gray, 60))
+    table.cell(panel, 1, 5, na(lvlTarget) ? "-" : str.tostring(lvlTarget, format.mintick), text_color = color.white, bgcolor = color.new(color.gray, 60))
+    table.cell(panel, 0, 6, "RR aktual", text_color = color.white, bgcolor = color.new(color.gray, 60))
+    table.cell(panel, 1, 6, na(lvlRR) ? "-" : "1 : " + str.tostring(lvlRR, "#.##"), text_color = color.white, bgcolor = color.new(color.gray, 60))
+    table.cell(panel, 0, 7, "Sisa candle", text_color = color.white, bgcolor = color.new(color.gray, 60))
+    table.cell(panel, 1, 7, pending ? str.tostring(math.max(0, i_expBars - (bar_index - sigBar))) : "-", text_color = color.white, bgcolor = color.new(color.gray, 60))
+    table.cell(panel, 0, 8, "Skip (RR<" + str.tostring(i_minRR, "#.#") + ")", text_color = color.white, bgcolor = color.new(color.gray, 60))
+    table.cell(panel, 1, 8, str.tostring(skippedRR), text_color = color.white, bgcolor = color.new(color.gray, 60))
+
+// =============================================================================
+//  ALERT
+// =============================================================================
+alertcondition(bullSignal, "Momentum Candle Bullish", "Sinyal momentum bullish valid pada {{ticker}} {{interval}}")
+alertcondition(bearSignal, "Momentum Candle Bearish", "Sinyal momentum bearish valid pada {{ticker}} {{interval}}")
