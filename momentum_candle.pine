@@ -313,7 +313,7 @@ plotshape(i_showMark and bearSignal, "Sinyal Bearish", shape.triangledown, locat
 barcolor(i_showMark and bullSignal ? color.new(color.lime, 0) : i_showMark and bearSignal ? color.new(color.fuchsia, 0) : na)
 
 // --- Panel status ------------------------------------------------------------
-if i_showTable and barstate.islast
+if i_showTable and barstate.islastconfirmedhistory
     var table panel = table.new(position.top_right, 2, 9, border_width = 1)
     stateTxt = not tfOk ? "TIMEFRAME SALAH" : strategy.position_size != 0 ? "POSISI TERBUKA" : pending ? "PENDING ORDER" : "MENUNGGU SINYAL"
     stateCol = not tfOk ? color.new(color.red, 0) : strategy.position_size != 0 ? color.new(color.green, 30) : pending ? color.new(color.blue, 30) : color.new(color.gray, 30)
@@ -340,5 +340,10 @@ if i_showTable and barstate.islast
 // =============================================================================
 //  ALERT
 // =============================================================================
-alertcondition(bullSignal, "Momentum Candle Bullish", "Sinyal momentum bullish valid pada {{ticker}} {{interval}}")
-alertcondition(bearSignal, "Momentum Candle Bearish", "Sinyal momentum bearish valid pada {{ticker}} {{interval}}")
+//  alertcondition() tidak berfungsi di dalam strategy, jadi dipakai alert().
+//  Pasang alert dengan kondisi "Any alert() function call".
+if bullSignal
+    alert("Momentum Candle: sinyal BULLISH valid pada " + syminfo.ticker + " " + timeframe.period, alert.freq_once_per_bar_close)
+
+if bearSignal
+    alert("Momentum Candle: sinyal BEARISH valid pada " + syminfo.ticker + " " + timeframe.period, alert.freq_once_per_bar_close)
