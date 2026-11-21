@@ -1,0 +1,402 @@
+<title>Lab Donchian XAUUSD</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: one reading column of numbered lab stages, each = claim, evidence chart, takeaway. Gold accent = the instrument. */
+:root{
+  --bg:#f4f5f7; --surface:#ffffff; --fg:#141922; --muted:#5a6372; --line:#e1e5ea; --soft:#eef0f3;
+  --accent:#9a6b00; --accent-soft:#f6ecd2;
+  --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#6250d6; --s5:#8a8f98; --s6:#e34948;
+  --pos:#2a78d6; --neg:#eb6834; --neu:#eceef1;
+  --good:#0e7a4f; --bad:#c23b3a;
+  --f-display:"Space Grotesk",ui-sans-serif,system-ui,sans-serif;
+  --f-body:"Inter",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0e1116; --surface:#161b22; --fg:#e7eaef; --muted:#9aa3b1; --line:#262d37; --soft:#1c222b;
+  --accent:#e2b542; --accent-soft:#2b2412;
+  --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#9085e9; --s5:#9aa0a8; --s6:#e66767;
+  --pos:#3987e5; --neg:#d95926; --neu:#222832; --good:#3cc489; --bad:#f07a78; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0e1116; --surface:#161b22; --fg:#e7eaef; --muted:#9aa3b1; --line:#262d37; --soft:#1c222b;
+  --accent:#e2b542; --accent-soft:#2b2412;
+  --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#9085e9; --s5:#9aa0a8; --s6:#e66767;
+  --pos:#3987e5; --neg:#d95926; --neu:#222832; --good:#3cc489; --bad:#f07a78; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:15px;line-height:1.6;margin:0}
+.wrap{max-width:1040px;margin:0 auto;padding-block:40px 80px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+h1,h2,h3{font-family:var(--f-display);line-height:1.2;text-wrap:balance;margin:0}
+h1{font-size:clamp(30px,5vw,46px);font-weight:700;letter-spacing:-.02em}
+h2{font-size:clamp(22px,3vw,28px);font-weight:600;letter-spacing:-.01em}
+h3{font-size:17px;font-weight:600}
+p{margin:0;max-width:70ch}
+.muted{color:var(--muted)}
+.mono,.num{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.eyebrow{font-family:var(--f-mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--accent)}
+header{display:grid;gap:14px;padding-bottom:28px;border-bottom:1px solid var(--line)}
+header .meta{display:flex;flex-wrap:wrap;gap:8px 18px;font-size:13px;color:var(--muted)}
+.verdict{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:28px}
+.tile{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;display:grid;gap:4px;min-width:0}
+.tile .k{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.tile .v{font-family:var(--f-display);font-size:26px;font-weight:600;font-variant-numeric:tabular-nums}
+.tile .s{font-size:13px;color:var(--muted)}
+.tile.key{border-color:var(--accent);background:var(--accent-soft)}
+.answer{margin-top:28px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:22px;display:grid;gap:12px}
+.answer ul{margin:0;padding-left:20px;display:grid;gap:6px;max-width:75ch}
+section{padding-top:52px;display:grid;gap:16px}
+.stage{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+.stage .n{font-family:var(--f-mono);font-size:13px;color:var(--accent);border:1px solid var(--accent);border-radius:999px;padding:1px 10px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:18px;min-width:0}
+.chart{position:relative;height:320px}
+.chart.tall{height:380px}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px}
+.take{border-left:3px solid var(--accent);padding:4px 0 4px 14px;max-width:75ch}
+.tablewrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+th{font-weight:600;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+td:first-child,th:first-child{text-align:left}
+td{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+td.txt{font-family:var(--f-body);white-space:normal;min-width:220px}
+tr.hl td{background:var(--accent-soft)}
+.heat td{text-align:center;font-size:12px;padding:7px 6px;border:2px solid var(--surface)}
+.heat th{text-align:center}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:13px;color:var(--muted)}
+.sw{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+.pill{display:inline-block;font-family:var(--f-mono);font-size:12px;padding:1px 8px;border-radius:999px;border:1px solid var(--line);color:var(--muted)}
+.pill.good{color:var(--good);border-color:currentColor}.pill.bad{color:var(--bad);border-color:currentColor}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;flex-wrap:wrap}
+.seg button{font:inherit;font-size:13px;background:var(--surface);color:var(--fg);border:0;border-right:1px solid var(--line);padding:6px 12px;cursor:pointer}
+.seg button:last-child{border-right:0}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--surface)}
+.seg button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.sop{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:14px}
+.sop .card{display:grid;gap:10px;align-content:start}
+.sop dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:6px 12px;font-size:14px}
+.sop dt{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.05em;padding-top:2px}
+.sop dd{margin:0}
+.svgbox{width:100%;overflow-x:auto}
+svg text{font-family:var(--f-mono)}
+ol.steps{margin:0;padding-left:20px;display:grid;gap:8px;max-width:75ch}
+footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--line);font-size:13px;color:var(--muted)}
+@media (max-width:560px){.chart{height:260px}.chart.tall{height:300px}.tile .v{font-size:22px}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+
+<div class="wrap">
+<header>
+  <span class="eyebrow">Lab R&amp;D · XAUUSD H1 · 2 Jan 2015 – 9 Nov 2026</span>
+  <h1>Lab Donchian XAUUSD</h1>
+  <p class="muted">Pengujian <b class="num" id="nConfigs">87.408</b> konfigurasi Donchian (panjang channel, jenis entry, stop loss, exit, filter tren, jam, volatilitas) di data emas H1 kamu, dengan biaya nyata dan uji anti-overfit. Tujuannya: lebih banyak trade dengan SOP yang jelas, dan jawaban jujur untuk target 5% per bulan.</p>
+  <div class="meta"><span>69.878 candle H1</span><span>Spread asli per candle + slippage $0,05 + komisi $0,07/oz</span><span>Pilih di 2015–2022, uji di 2023–2026</span><span>Setiap hasil dihitung 2× (asumsi normal dan pesimis)</span></div>
+</header>
+
+<div class="verdict">
+  <div class="tile key"><span class="k">Rekomendasi</span><span class="v">Trio Donchian</span><span class="s">Sistem A + B + D dijalankan bersamaan</span></div>
+  <div class="tile"><span class="k">Trade per bulan</span><span class="v num" id="tTrades">–</span><span class="s">Strategi sekarang: 5,4 per bulan</span></div>
+  <div class="tile"><span class="k">Rata-rata hasil per bulan</span><span class="v num" id="tRmo">–</span><span class="s">Dalam R (1R = risiko 1 trade)</span></div>
+  <div class="tile"><span class="k">Risiko untuk rata-rata 5%/bln</span><span class="v num" id="tNeed">–</span><span class="s">per trade, terlalu besar untuk prop firm</span></div>
+</div>
+
+<div class="answer">
+  <h3>Jawaban singkat</h3>
+  <ul>
+    <li><b>Setting paling profit yang tetap bisa dipercaya</b> adalah gabungan tiga sistem breakout Donchian (A, B, D di bawah). Hasilnya sekitar <span class="num" id="aTrades">35</span> trade per bulan (6× lebih sering dari sekarang), positif di setiap tahun 2015–2026, dan tetap positif dengan asumsi intrabar yang paling buruk.</li>
+    <li><b>Sistem terbaik kalau mau satu saja:</b> A, Breakout DC30 dengan SL struktur 10 candle, exit trailing di garis tengah channel, filter EMA200, dan jam 08–21. Positif 12 dari 12 tahun dan paling konsisten: Sharpe bulanan 0,25 di 2015–2022 dan 0,23 di 2023–2026.</li>
+    <li><b>Target 5% per bulan secara rata-rata tidak realistis</b> di batas max loss 5%ers. Risiko yang dibutuhkan sekitar <span class="num" id="aNeed">1,5%</span> per trade, dan dengan itu peluang akun kena −5% dalam setahun sekitar <span class="num" id="aBreach">74%</span>. Yang realistis: rata-rata 0,6–1% per bulan pada risiko 0,2–0,3%, dengan sesekali bulan +5% ke atas.</li>
+    <li><b>Jebakan terbesar:</b> setting dengan stop sangat ketat (DC200, SL 1×ATR, TP 3R) terlihat juara (+0,27R per trade) tapi jadi rugi berat (−0,37R) kalau urutan harga di dalam candle tidak menguntungkan. Data H1 tidak bisa membuktikan mana yang benar, jadi setting seperti itu dibuang.</li>
+  </ul>
+</div>
+
+<!-- LAB 1 -->
+<section id="lab1">
+  <div class="stage"><span class="n">Lab 1</span><h2>Titik awal: strategi kamu sekarang</h2></div>
+  <p>Strategi sekarang (N=2, Enhanced, filter Donchian 83, SL 1%, TP 2,5R, reverse) diuji ulang di 12 tahun data. Grafik menunjukkan akumulasi R per bulan.</p>
+  <div class="card"><div class="chart"><canvas id="cBase" aria-label="Akumulasi R strategi sekarang"></canvas></div></div>
+  <div class="grid2">
+    <div class="card tablewrap"><table id="tblBase"></table></div>
+    <div class="take"><p><b>Kesimpulan:</b> hanya sekitar 5 trade per bulan dan hampir seluruh profit datang dari 2023–2026. Di 2015–2022 hasilnya mendatar (Sharpe bulanan 0,03). Untuk 5% per bulan dari +0,62R per bulan, risikonya harus sekitar 8% per trade.</p></div>
+  </div>
+</section>
+
+<!-- LAB 2 -->
+<section id="lab2">
+  <div class="stage"><span class="n">Lab 2</span><h2>Jenis entry: hanya breakout yang punya edge</h2></div>
+  <p>Lima cara masuk di channel Donchian diuji dengan semua kombinasi panjang channel, SL, exit, dan filter. Batang menunjukkan persentase konfigurasi yang untung di periode 2015–2022.</p>
+  <div class="card"><div class="chart"><canvas id="cFam" aria-label="Persentase konfigurasi untung per jenis entry"></canvas></div></div>
+  <p class="take"><b>Kesimpulan:</b> breakout dengan stop order (pasang buy stop di high channel, sell stop di low channel) untung di 80% konfigurasi. Pullback ke tengah channel dan fade di band hampir selalu rugi di emas H1. Emas di H1 bergerak sebagai trend, bukan mean-reversion, jadi lab berikutnya fokus pada breakout.</p>
+</section>
+
+<!-- LAB 3 -->
+<section id="lab3">
+  <div class="stage"><span class="n">Lab 3</span><h2>Jebakan intrabar: stop ketat terlihat juara</h2></div>
+  <p>Data H1 hanya punya Open, High, Low, Close. Kalau dalam satu candle harga menyentuh SL dan juga target, kita tidak tahu mana yang lebih dulu. Asumsi <b>normal</b> mengikuti model 4-tick TradingView. Asumsi <b>pesimis</b> selalu menganggap harga menyentuh sisi rugi dulu. Tabel: rata-rata R per trade untuk breakout DC200.</p>
+  <div class="grid2">
+    <div class="card tablewrap"><h3 style="margin-bottom:10px">Asumsi normal</h3><table class="heat" id="hTrapN"></table></div>
+    <div class="card tablewrap"><h3 style="margin-bottom:10px">Asumsi pesimis</h3><table class="heat" id="hTrapP"></table></div>
+  </div>
+  <div class="legend"><span><i class="sw" style="background:var(--pos)"></i>untung per trade</span><span><i class="sw" style="background:var(--neg)"></i>rugi per trade</span></div>
+  <p class="take"><b>Kesimpulan:</b> dengan SL 1×ATR, 54% candle entry punya rentang lebih besar dari jarak SL, jadi hasilnya bergantung pada tebakan urutan harga. Ini masalah yang sama dengan "On order fill" di TradingView. Semua setting yang hanya bagus di asumsi normal dibuang. Mulai Lab 4, peringkat memakai nilai terburuk dari dua asumsi.</p>
+</section>
+
+<!-- LAB 4 -->
+<section id="lab4">
+  <div class="stage"><span class="n">Lab 4</span><h2>Peta setting yang tahan banting</h2></div>
+  <p>Breakout dengan stop order, SL struktur 10 candle, filter EMA200, jam 08–21. Angka di sel adalah Sharpe bulanan terburuk dari dua asumsi. Pilih periode untuk melihat apakah pola yang bagus di 2015–2022 bertahan di 2023–2026.</p>
+  <div class="seg" role="group" aria-label="Periode heatmap"><button id="hmIS" aria-pressed="true">2015–2022 (pemilihan)</button><button id="hmOOS" aria-pressed="false">2023–2026 (uji)</button><button id="hmN" aria-pressed="false">Trade per tahun</button></div>
+  <div class="card tablewrap"><table class="heat" id="hRobust"></table></div>
+  <p>Setiap titik di bawah adalah satu konfigurasi breakout dengan SL lebar. Sumbu datar: jumlah trade per tahun. Sumbu tegak: rata-rata R per trade dengan asumsi pesimis.</p>
+  <div class="card"><div class="chart tall"><canvas id="cScatter" aria-label="Frekuensi vs ekspektansi"></canvas></div>
+  <div class="legend" style="margin-top:8px"><span><i class="sw" style="background:var(--s1)"></i>Breakout stop order</span><span><i class="sw" style="background:var(--s2)"></i>Breakout close</span></div></div>
+  <p class="take"><b>Kesimpulan:</b> area terkuat adalah channel 20–30. TP 3R paling untung per trade (sekitar +0,22R) tapi hanya sekitar 55 trade per tahun, lebih jarang dari strategi sekarang. Exit midline atau trailing 20 candle memberi 110–140 trade per tahun dan positif 12 dari 12 tahun, jadi itu yang dipilih. Pola TP 1R/2R yang naik-turun menunjukkan sebagian hasil per sel masih noise, karena itu pilihan diambil dari area yang bagus secara konsisten, bukan dari satu sel tertinggi. Frekuensi tinggi dicapai dengan menggabungkan beberapa sistem, bukan dengan satu sistem yang sangat cepat.</p>
+</section>
+
+<!-- LAB 5 -->
+<section id="lab5">
+  <div class="stage"><span class="n">Lab 5</span><h2>Finalis</h2></div>
+  <p>Empat sistem terbaik yang lolos semua filter, dibandingkan dengan strategi sekarang dan dengan "juara palsu" dari Lab 3. Semua angka memakai asumsi pesimis.</p>
+  <div class="card tablewrap"><table id="tblFinal"></table></div>
+  <div class="card"><div class="chart tall"><canvas id="cFinal" aria-label="Akumulasi R finalis"></canvas></div></div>
+  <div class="grid2">
+    <div class="card"><h3 style="margin-bottom:8px">R per tahun</h3><div class="chart"><canvas id="cYear" aria-label="R per tahun"></canvas></div></div>
+    <div class="card"><h3 style="margin-bottom:8px">Ketahanan terhadap slippage</h3><div class="chart"><canvas id="cSlip" aria-label="Rata-rata R vs slippage"></canvas></div></div>
+  </div>
+  <p class="take"><b>Kesimpulan:</b> A positif 12 dari 12 tahun dan hasilnya paling stabil antara periode pemilihan dan periode uji. C sedikit lebih untung per trade tapi lebih jarang trade dan lebih bergantung pada 2023–2026. B paling sering trade. D masuk di open candle berikutnya, jadi tidak punya masalah urutan intrabar. Semua sistem breakout tetap untung dengan slippage $0,20 per order, tapi edge-nya hilang di sekitar $0,50. Hindari entry saat rilis berita besar dan pakai broker dengan spread emas rendah.</p>
+</section>
+
+<!-- LAB 6 -->
+<section id="lab6">
+  <div class="stage"><span class="n">Lab 6</span><h2>Trio Donchian: A + B + D bersamaan</h2></div>
+  <p>Korelasi hasil bulanan antar sistem hanya 0,38–0,56, jadi menggabungkannya menambah jumlah trade sekaligus meratakan hasil. Setiap sistem memakai risiko yang sama per trade. Paling banyak 3 posisi terbuka bersamaan.</p>
+  <div class="verdict" id="portTiles"></div>
+  <div class="grid2">
+    <div class="card"><h3 style="margin-bottom:8px">Sebaran hasil bulanan (R)</h3><div class="chart"><canvas id="cHist" aria-label="Distribusi R bulanan"></canvas></div></div>
+    <div class="card"><h3 style="margin-bottom:8px">R per tahun (gabungan)</h3><div class="chart"><canvas id="cPortYr" aria-label="R per tahun portofolio"></canvas></div></div>
+  </div>
+</section>
+
+<!-- LAB 7 -->
+<section id="lab7">
+  <div class="stage"><span class="n">Lab 7</span><h2>Target 5% per bulan: berapa risikonya?</h2></div>
+  <p>Hasil Trio dikali risiko per trade. Garis biru: seberapa sering satu bulan mencapai +5% atau lebih. Garis oranye: peluang akun turun −5% dari awal dalam 12 bulan (Monte Carlo 5.000 jalur).</p>
+  <div class="card"><div class="chart"><canvas id="cRisk" aria-label="Peluang bulan 5% vs peluang kena max loss"></canvas></div></div>
+  <div class="card tablewrap"><table id="tblRisk"></table></div>
+  <h3>Monte Carlo 12 bulan</h3>
+  <div class="seg" role="group" aria-label="Risiko per trade" id="fanBtns"></div>
+  <div class="card"><div class="chart"><canvas id="cFan" aria-label="Kipas Monte Carlo"></canvas></div>
+  <div class="legend" style="margin-top:8px"><span><i class="sw" style="background:var(--s1)"></i>median</span><span><i class="sw" style="background:var(--s1);opacity:.35"></i>50% jalur di tengah</span><span><i class="sw" style="background:var(--s1);opacity:.15"></i>90% jalur</span><span><i class="sw" style="background:var(--s6)"></i>batas −5%</span></div></div>
+  <p class="take"><b>Kesimpulan:</b> rata-rata 5% per bulan butuh risiko sekitar 1,5% per trade. Pada risiko itu drawdown historisnya sekitar 67% dan 3 dari 4 akun kena −5% dalam setahun. Risiko 0,2–0,3% memberi rata-rata 0,6–1% per bulan, dengan bulan +5% atau lebih muncul di sekitar 4–12% bulan. Target yang lebih sehat: 8–12% per tahun di akun prop, lalu besarkan lewat scaling akun, bukan lewat risiko.</p>
+</section>
+
+<!-- LAB 8 -->
+<section id="lab8">
+  <div class="stage"><span class="n">Lab 8</span><h2>Simulasi Bootcamp 5%ers</h2></div>
+  <p>3 step evaluasi (target +6%, max loss −5% dari awal step), lalu funded dengan risiko 0,25%. Dibandingkan dua aturan: risiko tetap, dan risiko dipotong setengah saat akun turun 2% dari puncaknya.</p>
+  <div class="grid2">
+    <div class="card"><h3 style="margin-bottom:8px">Peluang lulus 3 step</h3><div class="chart"><canvas id="cBoot" aria-label="Peluang lulus vs risiko"></canvas></div></div>
+    <div class="card tablewrap"><h3 style="margin-bottom:8px">Lama sampai lulus (median, bulan)</h3><table id="tblBoot"></table></div>
+  </div>
+  <p class="take"><b>Kesimpulan:</b> aturan potong setengah menaikkan peluang lulus hampir 2×. Pilihan seimbang: risiko 0,4% dengan aturan potong setengah, sekitar 50% lulus dalam sekitar 10 bulan. Pilihan aman: 0,25% dengan aturan yang sama, sekitar 74% lulus dalam sekitar 21 bulan.</p>
+</section>
+
+<!-- VISUAL -->
+<section id="visual">
+  <div class="stage"><span class="n">Contoh</span><h2>Seperti apa trade Sistem A di chart</h2></div>
+  <p id="candleCap">Candle H1 nyata dengan Donchian 30 (garis atas dan bawah), midline (titik-titik), dan EMA200. Segitiga = entry, silang = exit. Arahkan kursor ke marker untuk detail.</p>
+  <div class="card svgbox" id="candles"></div>
+  <p class="take">Pola yang terlihat adalah pola normal sistem trend: beberapa loss kecil berturut-turut saat harga bergerak menyamping, lalu satu trade yang ikut trend menutup semuanya. Loss di sini banyak yang lebih kecil dari 1R karena trailing midline menutup posisi lebih awal.</p>
+</section>
+
+<!-- SOP -->
+<section id="sop">
+  <div class="stage"><span class="n">SOP</span><h2>Aturan eksekusi Trio Donchian</h2></div>
+  <p>Semua jam adalah jam server data kamu (MT5, biasanya GMT+2 atau GMT+3). Donchian N = high tertinggi dan low terendah dari N candle H1 <b>sebelumnya</b>, tanpa candle yang sedang berjalan. ATR = ATR14 (Wilder).</p>
+  <div class="sop">
+    <div class="card"><span class="pill good">Sistem A · utama</span><h3>Trend Breakout DC30</h3>
+      <dl><dt>Arah</dt><dd>Close candle terakhir di atas EMA200: hanya BUY. Di bawah: hanya SELL.</dd>
+      <dt>Entry</dt><dd>BUY STOP di high Donchian 30, atau SELL STOP di low Donchian 30. Geser level setiap candle baru.</dd>
+      <dt>Jam</dt><dd>Order hanya aktif 08:00–21:59.</dd>
+      <dt>SL</dt><dd>Low terendah 10 candle (buy) atau high tertinggi 10 candle (sell). Jarak minimal 0,5×ATR, maksimal 4×ATR.</dd>
+      <dt>Exit</dt><dd>Trailing stop di midline Donchian 30, hanya digeser searah profit. Tanpa TP.</dd></dl></div>
+    <div class="card"><span class="pill">Sistem B · frekuensi</span><h3>Fast Breakout DC10</h3>
+      <dl><dt>Arah</dt><dd>Dua arah, tanpa filter tren.</dd>
+      <dt>Entry</dt><dd>BUY STOP di high Donchian 10 dan SELL STOP di low Donchian 10.</dd>
+      <dt>Jam</dt><dd>Order hanya aktif 08:00–21:59.</dd>
+      <dt>SL</dt><dd>Struktur 10 candle, seperti Sistem A.</dd>
+      <dt>Exit</dt><dd>Trailing stop di low terendah 20 candle (buy) atau high tertinggi 20 candle (sell), hanya kalau lebih menguntungkan dari SL.</dd></dl></div>
+    <div class="card"><span class="pill">Sistem D · konfirmasi close</span><h3>Close Breakout DC10</h3>
+      <dl><dt>Syarat</dt><dd>Close candle menembus high Donchian 10 (buy) atau low (sell), searah EMA200, dan ATR di atas median ATR 20 hari (480 candle).</dd>
+      <dt>Entry</dt><dd>Market order di open candle berikutnya, hanya jika jam 08:00–21:59.</dd>
+      <dt>SL</dt><dd>2,5×ATR dari harga entry.</dd>
+      <dt>Exit</dt><dd>TP tetap 1,5R.</dd></dl></div>
+  </div>
+  <div class="card"><h3 style="margin-bottom:8px">Aturan umum</h3>
+    <ol class="steps">
+      <li>Risiko per trade 0,25% dari saldo awal step (pilihan aman) atau 0,4% (pilihan seimbang). Lot = risiko dalam USD ÷ (jarak SL dalam USD × 100 oz per lot).</li>
+      <li>Saat akun turun 2% dari puncaknya, risiko dipotong setengah sampai akun kembali ke puncak.</li>
+      <li>Satu posisi per sistem. Paling banyak 3 posisi bersamaan (total risiko terbuka maksimal 3× risiko per trade).</li>
+      <li>Setelah posisi ditutup, jangan entry lagi di candle yang sama.</li>
+      <li>Jangan memasang order baru 15 menit sebelum dan sesudah rilis berita besar (NFP, CPI, FOMC), karena slippage di atas $0,50 menghapus edge.</li>
+      <li>Jangan mengubah setting setelah beberapa loss. Rangkaian 6–10 loss berturut-turut adalah hal normal untuk sistem ini.</li>
+    </ol></div>
+</section>
+
+<!-- LIMITS -->
+<section id="limits">
+  <div class="stage"><span class="n">Batasan</span><h2>Yang belum bisa dibuktikan lab ini</h2></div>
+  <ol class="steps">
+    <li><b>Hanya data H1.</b> Urutan harga di dalam candle ditebak. Sudah diatasi dengan memakai asumsi terburuk, tapi verifikasi terbaik adalah data M5 atau M1. Ekspor dari MT5 dan lab ini bisa diulang dengan presisi lebih tinggi.</li>
+    <li><b>Slippage nyata belum diketahui.</b> Model memakai $0,05 per order. Ukur slippage asli di akun demo 2–4 minggu sebelum live.</li>
+    <li><b>Pemilihan dari 87 ribu konfigurasi.</b> Walau sudah dipilih di 2015–2022 dan diuji di 2023–2026, hasil live biasanya sedikit di bawah backtest.</li>
+    <li><b>Aturan 5%ers disederhanakan.</b> Daily pause dan detail lain tidak dimodelkan penuh. Cek aturan terbaru di situs 5%ers.</li>
+  </ol>
+</section>
+
+<footer>Dibuat dari data CSV XAUUSD H1 kamu. Kode lab ada di repo: <span class="mono">backtest/donchian_lab/</span>. Semua angka R sudah termasuk spread, slippage, dan komisi.</footer>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+const D = __DATA__;
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmt = (x, d=2) => (x==null||isNaN(x)) ? '–' : Number(x).toLocaleString('id-ID',{minimumFractionDigits:d,maximumFractionDigits:d});
+const S = D.sys, MC = D.mc, C = D.charts;
+const years = Object.keys(S.A.pess.yearly);
+let charts = [];
+function mk(id, cfg){ const el=document.getElementById(id); if(!el) return; charts.push(new Chart(el, cfg)); }
+function alpha(hex, a){ const h=hex.replace('#',''); const n=parseInt(h.length===3?h.split('').map(c=>c+c).join(''):h,16); return `rgba(${n>>16&255},${n>>8&255},${n&255},${a})`; }
+function base(){
+  Chart.defaults.font.family = css('--f-body'); Chart.defaults.color = css('--muted');
+  Chart.defaults.borderColor = css('--line'); Chart.defaults.font.size = 12;
+  Chart.defaults.plugins.tooltip.backgroundColor = css('--surface'); Chart.defaults.plugins.tooltip.titleColor = css('--fg');
+  Chart.defaults.plugins.tooltip.bodyColor = css('--fg'); Chart.defaults.plugins.tooltip.borderColor = css('--line'); Chart.defaults.plugins.tooltip.borderWidth = 1;
+  Chart.defaults.maintainAspectRatio = false; Chart.defaults.animation = false;
+}
+const lineOpts = (ylab, extra={}) => ({ interaction:{mode:'index',intersect:false}, plugins:{legend:{position:'bottom',labels:{boxWidth:10,boxHeight:10}}, ...(extra.plugins||{})},
+  scales:{ x:{grid:{display:false},ticks:{maxTicksLimit:12}}, y:{title:{display:!!ylab,text:ylab},grid:{color:css('--line')}} }, elements:{point:{radius:0,hoverRadius:4},line:{borderWidth:2}} });
+
+// ---------- static numbers
+const P = MC.port_stats;
+document.getElementById('tTrades').textContent = fmt(P.trades_mo,1);
+document.getElementById('tRmo').textContent = '+'+fmt(P.R_mo,2)+'R';
+document.getElementById('tNeed').textContent = '≈ '+fmt(P.need_risk_for_5,1)+'%';
+document.getElementById('aTrades').textContent = fmt(P.trades_mo,0);
+document.getElementById('aNeed').textContent = fmt(P.need_risk_for_5,1)+'%';
+const r15 = MC.risk_tab.find(r=>r.risk===1.5); document.getElementById('aBreach').textContent = fmt(r15.mc_p_breach12,0)+'%';
+
+// ---------- tables
+function tbl(id, head, rows, hlRow){ const t=document.getElementById(id); t.innerHTML = '<thead><tr>'+head.map(h=>`<th>${h}</th>`).join('')+'</tr></thead><tbody>'+rows.map((r,i)=>`<tr${i===hlRow?' class="hl"':''}>`+r.map((c,j)=>j===0?`<td class="txt">${c}</td>`:`<td>${c}</td>`).join('')+'</tr>').join('')+'</tbody>'; }
+const b = S.BASE.normal;
+tbl('tblBase',['Metrik','Nilai'],[
+ ['Trade per bulan',fmt(b.n_mo,1)],['Winrate',fmt(b.win,1)+'%'],['Rata-rata per trade',fmt(b.avgR,3)+'R'],['Profit factor',fmt(b.pf,2)],
+ ['Rata-rata per bulan',fmt(b.m_mean,2)+'R'],['Drawdown terburuk',fmt(b.ddR,1)+'R'],['Tahun positif',b.yrs_pos+' dari '+b.yrs],
+ ['Sharpe bulanan 2015–22 → 2023–26',fmt(b.is_sh,2)+' → '+fmt(b.oos_sh,2)]]);
+const fin = [['A','Sistem A'],['B','Sistem B'],['C','Sistem C'],['D','Sistem D'],['BASE','Sekarang'],['X','Juara palsu DC200']];
+tbl('tblFinal',['Sistem','Trade/bln','Win','R/trade','PF','R/bln','DD (R)','Tahun +','Sharpe 15–22','Sharpe 23–26'],
+ fin.map(([k,n])=>{ const s=S[k].pess||S[k].normal; return [`<b>${n}</b><br><span class="muted" style="font-size:12px">${S[k].label}</span>`,fmt(s.n_mo,1),fmt(s.win,0)+'%',(s.avgR>0?'+':'')+fmt(s.avgR,3),fmt(s.pf,2),(s.m_mean>0?'+':'')+fmt(s.m_mean,2),fmt(s.ddR,0),s.yrs_pos+'/'+s.yrs,fmt(s.is_sh,2),fmt(s.oos_sh,2)]; }),0);
+tbl('tblRisk',['Risiko/trade','Rata-rata/bln','Median/bln','Bulan ≥ +5%','Bulan ≤ −4%','Bulan terburuk','DD historis','Kena −5% dlm 12 bln'],
+ MC.risk_tab.map(r=>[fmt(r.risk,2)+'%',fmt(r.mean_month,2)+'%',fmt(r.median_month,2)+'%',fmt(r.p_month5,0)+'%',fmt(r.p_month_m4,0)+'%',fmt(r.worst_month,1)+'%',fmt(r.hist_dd,1)+'%',fmt(r.mc_p_breach12,0)+'%']), MC.risk_tab.findIndex(r=>r.risk===0.25));
+tbl('tblBoot',['Risiko','Tetap: lulus','Tetap: bulan','Potong ½: lulus','Potong ½: bulan'],
+ D.dyn.map(r=>[fmt(r.risk,2)+'%',fmt(r.flat,0)+'%',fmt(r.flat_mo,1),fmt(r.half2,0)+'%',fmt(r.half2_mo,1)]), D.dyn.findIndex(r=>r.risk===0.4));
+// portfolio tiles
+document.getElementById('portTiles').innerHTML = [
+ ['Trade per bulan',fmt(P.trades_mo,1),'A 11,8 · B 14,6 · D 8,5'],['Rata-rata per trade','+'+fmt(P.avgR,3)+'R','winrate '+fmt(P.win,0)+'%'],
+ ['Rata-rata per bulan','+'+fmt(P.R_mo,2)+'R','bulan positif '+fmt(P.pos_months,0)+'%'],['Drawdown terburuk',fmt(P.ddR,1)+'R','posisi bersamaan maks. '+P.maxopen]
+].map(([k,v,s])=>`<div class="tile"><span class="k">${k}</span><span class="v num">${v}</span><span class="s">${s}</span></div>`).join('');
+
+// ---------- heatmaps
+function divColor(v, max){ if(v==null) return 'transparent'; const t=Math.max(-1,Math.min(1,v/max)); const c=t>=0?css('--pos'):css('--neg'); return alpha(c, 0.12+0.78*Math.abs(t)); }
+function heat(id, rows, cols, vals, max, dec, rowName){
+  const t=document.getElementById(id); let h='<thead><tr><th>'+rowName+'</th>'+cols.map(c=>`<th>${c}</th>`).join('')+'</tr></thead><tbody>';
+  rows.forEach((r,i)=>{ h+=`<tr><th>${r}</th>`+cols.map((c,j)=>{ const v=vals[i][j]; const strong=Math.abs(v/max)>0.55; return `<td style="background:${divColor(v,max)};color:${strong?'#fff':'var(--fg)'}" title="${rowName} ${r}, ${c}: ${fmt(v,dec)}">${v==null?'–':fmt(v,dec)}</td>`; }).join('')+'</tr>'; });
+  t.innerHTML=h+'</tbody>';
+}
+const exLab = {'rr1.0':'TP 1R','rr1.5':'TP 1,5R','rr2.0':'TP 2R','rr3.0':'TP 3R','rr4.0':'TP 4R','rr5.0':'TP 5R','trail10.0':'Trail 10','trail20.0':'Trail 20','mid0.0':'Midline'};
+function heats(){
+  const tr=C.trap; const sl=tr.sls.map(s=>'SL '+s.replace('atr','').replace('.',',')+'×ATR'); const ex=tr.exits.map(e=>exLab[e]);
+  heat('hTrapN', sl, ex, tr.normal, 0.4, 3, 'Stop'); heat('hTrapP', sl, ex, tr.pess, 0.4, 3, 'Stop');
+  drawRobust(window._hm||'is');
+}
+function drawRobust(mode){
+  window._hm=mode; const h=C.hm; const ex=h.exits.map(e=>exLab[e]);
+  if(mode==='n') heat('hRobust', h.L.map(l=>'DC'+l), ex, h.nyr.map(r=>r.map(v=>v-120)), 200, 0, 'Channel'), relabelN();
+  else heat('hRobust', h.L.map(l=>'DC'+l), ex, mode==='is'?h.is_:h.oos, 0.35, 2, 'Channel');
+}
+function relabelN(){ const h=C.hm; document.querySelectorAll('#hRobust tbody tr').forEach((tr,i)=>tr.querySelectorAll('td').forEach((td,j)=>{ td.textContent=fmt(h.nyr[i][j],0); td.title=`${fmt(h.nyr[i][j],0)} trade per tahun`; })); }
+[['hmIS','is'],['hmOOS','oos'],['hmN','n']].forEach(([id,m])=>document.getElementById(id).addEventListener('click',()=>{ document.querySelectorAll('#lab4 .seg button').forEach(b=>b.setAttribute('aria-pressed','false')); document.getElementById(id).setAttribute('aria-pressed','true'); drawRobust(m); }));
+
+// ---------- candles (SVG)
+function candles(){
+  const box=document.getElementById('candles'); const bars=C.candles.bars, trs=C.candles.trades;
+  const W=1000,H=430,pl=8,pr=62,pt=14,pb=34; const n=bars.length; const cw=(W-pl-pr)/n;
+  let lo=Infinity,hi=-Infinity; bars.forEach(b=>{lo=Math.min(lo,b[3],b[6]);hi=Math.max(hi,b[2],b[5]);}); const pad=(hi-lo)*0.04; lo-=pad; hi+=pad;
+  const y=v=>pt+(hi-v)/(hi-lo)*(H-pt-pb), x=i=>pl+cw*(i+0.5);
+  const up=css('--s1'), dn=css('--s2'), fg=css('--fg'), mu=css('--muted'), ln=css('--line'), acc=css('--accent'), ema=css('--s4');
+  let s=`<svg viewBox="0 0 ${W} ${H}" width="100%" style="min-width:680px;display:block" role="img" aria-label="Contoh trade Sistem A">`;
+  const step=(hi-lo)/5; for(let k=0;k<=5;k++){ const v=lo+step*k; s+=`<line x1="${pl}" x2="${W-pr}" y1="${y(v)}" y2="${y(v)}" stroke="${ln}" stroke-width="1"/><text x="${W-pr+6}" y="${y(v)+4}" font-size="11" fill="${mu}">${v.toFixed(0)}</text>`; }
+  const path=(k)=>bars.map((b,i)=>(i?'L':'M')+x(i).toFixed(1)+','+y(b[k]).toFixed(1)).join('');
+  s+=`<path d="${path(5)}" fill="none" stroke="${acc}" stroke-width="1.6"/><path d="${path(6)}" fill="none" stroke="${acc}" stroke-width="1.6"/>`;
+  s+=`<path d="${bars.map((b,i)=>(i?'L':'M')+x(i).toFixed(1)+','+y((b[5]+b[6])/2).toFixed(1)).join('')}" fill="none" stroke="${acc}" stroke-width="1" stroke-dasharray="3 4" opacity=".8"/>`;
+  s+=`<path d="${path(7)}" fill="none" stroke="${ema}" stroke-width="1.6"/>`;
+  bars.forEach((b,i)=>{ const c=b[4]>=b[1]?up:dn; s+=`<line x1="${x(i)}" x2="${x(i)}" y1="${y(b[2])}" y2="${y(b[3])}" stroke="${c}" stroke-width="1"/><rect x="${x(i)-cw*0.32}" y="${y(Math.max(b[1],b[4]))}" width="${cw*0.64}" height="${Math.max(1,Math.abs(y(b[1])-y(b[4])))}" fill="${c}"><title>${b[0]} O ${b[1]} H ${b[2]} L ${b[3]} C ${b[4]}</title></rect>`; });
+  trs.forEach(t=>{ const c=t.R>0?css('--good'):css('--bad'); const ex=t.why===1?'SL':(t.why===2?'TP':'trailing'); const tip=`${t.side>0?'BUY':'SELL'} ${bars[t.ei][0]} @ ${t.ep} → exit ${ex} ${bars[t.xi][0]} @ ${t.xp} = ${t.R>0?'+':''}${fmt(t.R,2)}R`;
+    s+=`<line x1="${x(t.ei)}" y1="${y(t.ep)}" x2="${x(t.xi)}" y2="${y(t.xp)}" stroke="${c}" stroke-width="2" stroke-dasharray="5 3"/>`;
+    const ty=y(t.ep), tx=x(t.ei); const tri=t.side>0?`${tx-7},${ty+11} ${tx+7},${ty+11} ${tx},${ty}`:`${tx-7},${ty-11} ${tx+7},${ty-11} ${tx},${ty}`;
+    s+=`<g><title>${tip}</title><polygon points="${tri}" fill="${c}" stroke="${css('--surface')}" stroke-width="2"/></g>`;
+    const xx=x(t.xi), yy=y(t.xp); s+=`<g><title>${tip}</title><circle cx="${xx}" cy="${yy}" r="9" fill="transparent"/><path d="M${xx-5},${yy-5}L${xx+5},${yy+5}M${xx+5},${yy-5}L${xx-5},${yy+5}" stroke="${c}" stroke-width="2.4"/></g>`;
+    s+=`<text x="${xx+8}" y="${yy+(t.side>0?-8:16)}" font-size="11" fill="${fg}">${t.R>0?'+':''}${fmt(t.R,2)}R</text>`; });
+  [0,Math.floor(n/3),Math.floor(2*n/3),n-1].forEach(i=>{ s+=`<text x="${x(i)}" y="${H-12}" font-size="11" fill="${mu}" text-anchor="middle">${bars[i][0]}</text>`; });
+  s+=`<g font-size="11"><rect x="${pl+6}" y="${pt+4}" width="12" height="3" fill="${acc}"/><text x="${pl+24}" y="${pt+9}" fill="${fg}">Donchian 30</text><rect x="${pl+118}" y="${pt+4}" width="12" height="3" fill="${ema}"/><text x="${pl+136}" y="${pt+9}" fill="${fg}">EMA200</text></g>`;
+  box.innerHTML=s+'</svg>';
+  const tot=trs.reduce((a,t)=>a+t.R,0); document.getElementById('candleCap').innerHTML+=` Periode ${bars[0][0]} sampai ${bars[n-1][0]} 2026: ${trs.length} trade, total ${tot>0?'+':''}${fmt(tot,2)}R.`;
+}
+
+// ---------- charts
+function render(){
+  charts.forEach(c=>c.destroy()); charts=[]; base();
+  const s1=css('--s1'),s2=css('--s2'),s3=css('--s3'),s4=css('--s4'),s5=css('--s5'),s6=css('--s6'),acc=css('--accent');
+  const M=D.months;
+  mk('cBase',{type:'line',data:{labels:M,datasets:[{label:'Strategi sekarang (akumulasi R)',data:S.BASE.normal.cum,borderColor:s5,backgroundColor:alpha(s5,.12),fill:true}]},options:{...lineOpts('R'),plugins:{legend:{display:false}}}});
+  mk('cFam',{type:'bar',data:{labels:C.fam.map(f=>f.name),datasets:[{label:'% konfigurasi untung 2015–2022',data:C.fam.map(f=>f.pos),backgroundColor:C.fam.map(f=>f.pos>50?s1:s5),borderRadius:4}]},
+     options:{indexAxis:'y',plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>`${fmt(c.raw,1)}% dari ${C.fam[c.dataIndex].n.toLocaleString('id-ID')} konfigurasi`}}},scales:{x:{max:100,title:{display:true,text:'% konfigurasi dengan rata-rata R positif'}},y:{grid:{display:false}}}}});
+  mk('cScatter',{type:'scatter',data:{datasets:[{label:'Breakout stop order',data:C.scatter.stop.map(p=>({x:p[0],y:p[1]})),backgroundColor:alpha(s1,.45),pointRadius:2.5},{label:'Breakout close',data:C.scatter.close.map(p=>({x:p[0],y:p[1]})),backgroundColor:alpha(s2,.45),pointRadius:2.5}]},
+     options:{plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>`${fmt(c.raw.x,0)} trade/thn, ${fmt(c.raw.y,3)}R per trade`}}},scales:{x:{title:{display:true,text:'Trade per tahun'},max:400},y:{title:{display:true,text:'R per trade (pesimis)'},suggestedMin:-0.3,suggestedMax:0.25}}}});
+  const fs=[['A',s1],['B',s2],['C',s3],['D',s4],['BASE',s5]];
+  mk('cFinal',{type:'line',data:{labels:M,datasets:fs.map(([k,c])=>({label:k==='BASE'?'Sekarang':'Sistem '+k,data:(S[k].pess||S[k].normal).cum,borderColor:c,borderWidth:k==='A'?3:2,borderDash:k==='BASE'?[5,4]:[]}))},options:lineOpts('Akumulasi R')});
+  mk('cYear',{type:'bar',data:{labels:years,datasets:[['A',s1],['B',s2],['D',s4]].map(([k,c])=>({label:'Sistem '+k,data:years.map(y=>S[k].pess.yearly[y]),backgroundColor:c,borderRadius:3}))},options:{plugins:{legend:{position:'bottom',labels:{boxWidth:10}}},scales:{x:{grid:{display:false}},y:{title:{display:true,text:'R'}}}}});
+  const sl=['0.05','0.2','0.5','1.0'];
+  mk('cSlip',{type:'line',data:{labels:sl.map(v=>'$'+v.replace('.',',')),datasets:[['A',s1],['B',s2],['C',s3],['D',s4]].map(([k,c])=>({label:'Sistem '+k,data:sl.map(v=>S[k].slip[v]),borderColor:c,pointRadius:3}))},
+     options:{...lineOpts('R per trade'),scales:{x:{title:{display:true,text:'Slippage per order'},grid:{display:false}},y:{title:{display:true,text:'R per trade'},grid:{color:(c)=>c.tick.value===0?css('--fg'):css('--line')}}}}});
+  // histogram
+  const pm=MC.port_monthly; const edges=[]; for(let v=-20;v<=40;v+=4) edges.push(v);
+  const cnt=edges.slice(0,-1).map((e,i)=>pm.filter(v=>v>=e&&v<edges[i+1]).length);
+  mk('cHist',{type:'bar',data:{labels:edges.slice(0,-1).map((e,i)=>`${e} s/d ${edges[i+1]}`),datasets:[{label:'Jumlah bulan',data:cnt,backgroundColor:edges.slice(0,-1).map(e=>e>=0?s1:s2),borderRadius:3}]},options:{plugins:{legend:{display:false}},scales:{x:{title:{display:true,text:'R per bulan'},grid:{display:false}},y:{title:{display:true,text:'Jumlah bulan'}}}}});
+  const py=MC.port_yearly; mk('cPortYr',{type:'bar',data:{labels:Object.keys(py),datasets:[{label:'R',data:Object.values(py),backgroundColor:s1,borderRadius:3}]},options:{plugins:{legend:{display:false}},scales:{x:{grid:{display:false}},y:{title:{display:true,text:'R'}}}}});
+  const rt=MC.risk_tab;
+  mk('cRisk',{type:'line',data:{labels:rt.map(r=>fmt(r.risk,2)+'%'),datasets:[{label:'Bulan mencapai ≥ +5%',data:rt.map(r=>r.p_month5),borderColor:s1,pointRadius:3},{label:'Akun kena −5% dalam 12 bulan',data:rt.map(r=>r.mc_p_breach12),borderColor:s2,pointRadius:3}]},
+     options:{...lineOpts('%'),scales:{x:{title:{display:true,text:'Risiko per trade'},grid:{display:false}},y:{min:0,max:100,title:{display:true,text:'Peluang (%)'}}}}});
+  drawFan(window._fan||'0.25');
+  const dy=D.dyn; mk('cBoot',{type:'line',data:{labels:dy.map(r=>fmt(r.risk,2)+'%'),datasets:[{label:'Risiko tetap',data:dy.map(r=>r.flat),borderColor:s5,pointRadius:3},{label:'Potong ½ saat turun 2%',data:dy.map(r=>r.half2),borderColor:s1,pointRadius:3}]},
+     options:{...lineOpts('%'),scales:{x:{title:{display:true,text:'Risiko per trade saat challenge'},grid:{display:false}},y:{min:0,max:100,title:{display:true,text:'Lulus 3 step (%)'}}}}});
+  heats(); candles();
+}
+function drawFan(r){
+  window._fan=r; const old=charts.find(c=>c.canvas.id==='cFan'); if(old){old.destroy(); charts=charts.filter(c=>c!==old);}
+  const f=MC.fan[r], s1=css('--s1'), s6=css('--s6'); const lab=Array.from({length:13},(_,i)=>'Bln '+i);
+  mk('cFan',{type:'line',data:{labels:lab,datasets:[
+    {label:'95%',data:f['95'],borderColor:'transparent',backgroundColor:alpha(s1,.13),fill:'+4',pointRadius:0},
+    {label:'75%',data:f['75'],borderColor:'transparent',backgroundColor:alpha(s1,.28),fill:'+2',pointRadius:0},
+    {label:'Median',data:f['50'],borderColor:s1,borderWidth:3,pointRadius:0},
+    {label:'25%',data:f['25'],borderColor:'transparent',pointRadius:0},
+    {label:'5%',data:f['5'],borderColor:'transparent',pointRadius:0},
+    {label:'Batas −5%',data:lab.map(()=>-5),borderColor:s6,borderDash:[6,4],borderWidth:1.5,pointRadius:0}]},
+    options:{...lineOpts('% akun'),plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>`${c.dataset.label}: ${fmt(c.raw,1)}%`}}},scales:{x:{grid:{display:false}},y:{title:{display:true,text:'% dari saldo awal'}}}}});
+}
+const fb=document.getElementById('fanBtns'); ['0.2','0.25','0.3','0.5','1.0','1.5'].forEach(r=>{ const b=document.createElement('button'); b.textContent='Risiko '+r.replace('.',',')+'%'; b.setAttribute('aria-pressed',r==='0.25'?'true':'false');
+  b.addEventListener('click',()=>{ fb.querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed','false')); b.setAttribute('aria-pressed','true'); drawFan(r); }); fb.appendChild(b); });
+render();
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change',render);
+new MutationObserver(render).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
+</script>
