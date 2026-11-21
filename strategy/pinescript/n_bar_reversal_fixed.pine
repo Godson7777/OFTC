@@ -1,0 +1,224 @@
+//@version=5
+// N-Bar Reversal Detector Strategy — FIXED / REALISTIC BUILD
+// Perbaikan atas "@800% and Profit Factor2":
+//  1. SL/TP kini aktif SEJAK bar fill (tidak lagi bergantung position_avg_price yang na di bar entry)
+//  2. Integer division pada Min Percentage diperbaiki (float)
+//  3. Input Take Profit % tidak lagi dead code
+//  4. Double-order pada close_on_opposite dihapus (strategy.entry sudah reversal)
+//  5. ta.atr dikeluarkan dari local scope
+//  6. Hapus S/R line tertua (bukan terbaru)
+//  7. Opsi sizing berbasis risiko untuk mematikan ilusi compounding 100% equity
+//  8. Default commission & slippage realistis
+//  9. Guard history (butuh minimal n_value+1 bar)
+// 10. RSI filter punya mode directional yang benar-benar memfilter
+
+strategy("N-Bar Reversal Strategy (FIXED)", shorttitle="N-Bar Rev FIXED", overlay=true,
+     default_qty_type=strategy.percent_of_equity, default_qty_value=10,
+     initial_capital=10000,
+     commission_type=strategy.commission.percent, commission_value=0.02,
+     slippage=3,
+     pyramiding=0,
+     calc_on_every_tick=false,
+     process_orders_on_close=false)
+
+// PENTING: kalau script lama pernah kamu simpan, Properties di UI akan MENIMPA nilai di atas.
+// Tekan tombol "Defaults -> Reset settings" di dialog strategi supaya commission/slippage ini terpakai.
+
+// ===================== INPUTS =====================
+grpPat = "1. Pattern"
+n_value        = input.int(5, "N Value", minval=2, maxval=20, group=grpPat, tooltip="PERINGATAN: N=2 membuat 'pola' hanya jadi 'high>high[1]', bukan reversal. Pakai >=4 agar polanya bermakna.")
+min_percentage = input.float(70.0, "Min Percentage", minval=0.0, maxval=100.0, step=1, group=grpPat, tooltip="PERINGATAN: 0 = tanpa syarat sama sekali (setup selalu lolos).")
+pattern_type   = input.string("Enhanced", "Pattern Type", options=["Normal", "Enhanced"], group=grpPat)
+accuracy_mode  = input.string("Standard", "Accuracy Mode", options=["Standard", "High"], group=grpPat)
+use_volume_confirm = input.bool(false, "Use Volume Confirmation", group=grpPat)
+vol_only_high  = input.bool(true, "  Volume confirm hanya di mode High", group=grpPat)
+
+grpFlt = "2. Trend Filter"
+use_filter   = input.bool(true, "Use Trend Filter", group=grpFlt)
+filter_type  = input.string("MA Cloud", "Trend Filter Type", options=["None","MA Cloud","Supertrend","Donchian Channels","RSI"], group=grpFlt)
+filter_mode  = input.string("With Trend", "Filter Mode", options=["With Trend","Against Trend","No Filter"], group=grpFlt)
+ma_fast_len  = input.int(9,  "Fast MA Length", minval=1, group=grpFlt)
+ma_slow_len  = input.int(21, "Slow MA Length", minval=1, group=grpFlt)
+st_period    = input.int(10, "Supertrend Period", minval=1, group=grpFlt)
+st_multiplier= input.float(3.0, "Supertrend Multiplier", minval=0.1, group=grpFlt)
+dc_len       = input.int(20, "Donchian Length", minval=1, group=grpFlt)
+rsi_len      = input.int(14, "RSI Length", minval=1, group=grpFlt)
+rsi_mode     = input.string("Directional (50 line)", "RSI Filter Logic", options=["Directional (50 line)","Level (legacy)"], group=grpFlt, tooltip="Legacy = rsi>30 untuk long / rsi<70 untuk short, yang praktis TIDAK memfilter apa pun (true ~90% bar). Directional = rsi>50 untuk long, rsi<50 untuk short.")
+rsi_oversold  = input.float(30.0, "RSI Oversold (legacy)", minval=0, maxval=50, group=grpFlt)
+rsi_overbought= input.float(70.0, "RSI Overbought (legacy)", minval=50, maxval=100, group=grpFlt)
+
+grpRsk = "3. Risk Management"
+use_sl       = input.bool(true, "Use Stop Loss", group=grpRsk)
+sl_pct       = input.float(1.0, "Stop Loss %", minval=0.01, step=0.1, group=grpRsk)
+use_tp       = input.bool(true, "Use Take Profit", group=grpRsk)
+tp_source    = input.string("From R:R Ratio", "Take Profit Source", options=["From R:R Ratio","Fixed TP %"], group=grpRsk, tooltip="Di script lama, input 'Take Profit %' TIDAK PERNAH DIPAKAI (dead code). Sekarang kamu pilih eksplisit.")
+risk_reward  = input.float(2.0, "Risk/Reward Ratio", minval=0.1, step=0.1, group=grpRsk)
+tp_pct_fixed = input.float(2.0, "Fixed Take Profit %", minval=0.01, step=0.1, group=grpRsk)
+close_on_opposite = input.bool(true, "Reverse on Opposite Signal", group=grpRsk, tooltip="ON: sinyal berlawanan me-reverse posisi. OFF: entry hanya saat flat.")
+
+grpSiz = "4. Position Sizing"
+use_risk_sizing = input.bool(true, "Risk-based sizing (rekomendasi)", group=grpSiz, tooltip="ON: qty dihitung agar 1x SL = risk% dari equity. Ini mematikan ilusi compounding dari '100% of equity'.")
+risk_per_trade  = input.float(1.0, "Risk per Trade %", minval=0.01, maxval=10, step=0.1, group=grpSiz)
+
+grpVis = "5. Visual"
+show_signals = input.bool(true, "Show Entry Signals", group=grpVis)
+show_sr      = input.bool(true, "Show Dynamic S/R Lines", group=grpVis)
+max_lines    = input.int(10, "Max S/R Lines", minval=1, maxval=50, group=grpVis)
+
+// ===================== CALCULATIONS =====================
+// FIX: min pct efektif
+effective_min_pct = accuracy_mode == "High" ? math.max(min_percentage, 80.0) : min_percentage
+
+// FIX: ta.* selalu di global scope
+atr14   = ta.atr(14)
+vol_sma = ta.sma(volume, 20)
+rsi     = ta.rsi(close, rsi_len)
+
+// FIX: volume confirm menghormati tooltip
+vol_active     = use_volume_confirm and (not vol_only_high or accuracy_mode == "High")
+volume_confirm = not vol_active or volume > vol_sma
+
+// FIX: pembagian float, bukan integer division (dulu hasilnya cuma 0 atau 100)
+mostly_down(n_val, min_pct) =>
+    int down_count = 0
+    for i = 1 to n_val - 1
+        if close[i] < close[i + 1]
+            down_count += 1
+    float pct = 100.0 * down_count / (n_val - 1)
+    pct >= min_pct
+
+mostly_up(n_val, min_pct) =>
+    int up_count = 0
+    for i = 1 to n_val - 1
+        if close[i] > close[i + 1]
+            up_count += 1
+    float pct = 100.0 * up_count / (n_val - 1)
+    pct >= min_pct
+
+// FIX: guard history supaya bar-bar awal tidak menghasilkan sinyal dari data na
+enough_bars = bar_index >= n_value + 2
+
+bullish_reversal() =>
+    setup_down    = mostly_down(n_value, effective_min_pct)
+    high_break    = high > high[n_value - 1]
+    close_confirm = pattern_type == "Enhanced" ? close > close[n_value - 1] : true
+    enough_bars and setup_down and high_break and close_confirm and volume_confirm
+
+bearish_reversal() =>
+    setup_up      = mostly_up(n_value, effective_min_pct)
+    low_break     = low < low[n_value - 1]
+    close_confirm = pattern_type == "Enhanced" ? close < close[n_value - 1] : true
+    enough_bars and setup_up and low_break and close_confirm and volume_confirm
+
+// --- Filters ---
+ma_fast   = ta.sma(close, ma_fast_len)
+ma_slow   = ta.sma(close, ma_slow_len)
+ma_bull   = close > math.avg(ma_fast, ma_slow)
+ma_bear   = close < math.avg(ma_fast, ma_slow)
+
+[supertrend, direction] = ta.supertrend(st_multiplier, st_period)
+st_bull = direction < 0
+st_bear = direction > 0
+
+dc_upper = ta.highest(high, dc_len)
+dc_lower = ta.lowest(low, dc_len)
+dc_bull  = close > dc_upper[1]
+dc_bear  = close < dc_lower[1]
+
+// FIX: RSI filter yang benar-benar memfilter
+rsi_bull = rsi_mode == "Directional (50 line)" ? rsi > 50 : rsi > rsi_oversold
+rsi_bear = rsi_mode == "Directional (50 line)" ? rsi < 50 : rsi < rsi_overbought
+
+f_bull = filter_type == "MA Cloud" ? ma_bull : filter_type == "Supertrend" ? st_bull : filter_type == "Donchian Channels" ? dc_bull : filter_type == "RSI" ? rsi_bull : true
+f_bear = filter_type == "MA Cloud" ? ma_bear : filter_type == "Supertrend" ? st_bear : filter_type == "Donchian Channels" ? dc_bear : filter_type == "RSI" ? rsi_bear : true
+
+bull_filter = not use_filter or filter_mode == "No Filter" ? true : filter_mode == "With Trend" ? f_bull : not f_bull
+bear_filter = not use_filter or filter_mode == "No Filter" ? true : filter_mode == "With Trend" ? f_bear : not f_bear
+
+long_condition  = bullish_reversal() and bull_filter
+short_condition = bearish_reversal() and bear_filter
+
+// ===================== STRATEGY =====================
+tp_pct_eff = tp_source == "From R:R Ratio" ? sl_pct * risk_reward : tp_pct_fixed
+
+// FIX: harga SL/TP disimpan saat sinyal, TIDAK memakai position_avg_price.
+// Efeknya strategy.exit bisa disubmit di bar sinyal yang sama, sehingga proteksi
+// sudah aktif begitu entry terisi di open bar berikutnya (dulu ada 1 bar tanpa SL).
+var float lgSL = na
+var float lgTP = na
+var float shSL = na
+var float shTP = na
+
+// FIX: tidak ada lagi strategy.close ganda — strategy.entry arah berlawanan sudah reversal
+can_long  = strategy.position_size == 0 or (strategy.position_size < 0 and close_on_opposite)
+can_short = strategy.position_size == 0 or (strategy.position_size > 0 and close_on_opposite)
+
+// Sizing berbasis risiko: 1x SL == risk_per_trade% dari equity
+riskQty(px) =>
+    float riskCash  = strategy.equity * risk_per_trade / 100.0
+    float riskPerUn = px * sl_pct / 100.0
+    riskPerUn > 0 ? riskCash / riskPerUn : na
+
+if long_condition and can_long
+    float est = close
+    if use_risk_sizing
+        strategy.entry("Long", strategy.long, qty=riskQty(est))
+    else
+        strategy.entry("Long", strategy.long)
+    lgSL := est * (1 - sl_pct / 100.0)
+    lgTP := est * (1 + tp_pct_eff / 100.0)
+    if show_signals
+        label.new(bar_index, low - atr14, "BUY", style=label.style_label_up, color=color.green, textcolor=color.white, size=size.small)
+
+if short_condition and can_short
+    float est = close
+    if use_risk_sizing
+        strategy.entry("Short", strategy.short, qty=riskQty(est))
+    else
+        strategy.entry("Short", strategy.short)
+    shSL := est * (1 + sl_pct / 100.0)
+    shTP := est * (1 - tp_pct_eff / 100.0)
+    if show_signals
+        label.new(bar_index, high + atr14, "SELL", style=label.style_label_down, color=color.red, textcolor=color.white, size=size.small)
+
+// Exit orders disubmit setiap bar, termasuk bar sinyal -> aktif sejak fill
+if use_sl or use_tp
+    strategy.exit("L-Exit", from_entry="Long",  stop = use_sl ? lgSL : na, limit = use_tp ? lgTP : na)
+    strategy.exit("S-Exit", from_entry="Short", stop = use_sl ? shSL : na, limit = use_tp ? shTP : na)
+
+// ===================== PLOTS =====================
+showMA = use_filter and filter_type == "MA Cloud"
+pf = plot(showMA ? ma_fast : na, "Fast MA", color=color.blue)
+ps = plot(showMA ? ma_slow : na, "Slow MA", color=color.orange)
+fill(pf, ps, color=color.new(color.gray, 80), title="MA Cloud")
+
+plot(use_filter and filter_type == "Supertrend" ? supertrend : na, "Supertrend", color=direction < 0 ? color.green : color.red, linewidth=2)
+
+showDC = use_filter and filter_type == "Donchian Channels"
+p1 = plot(showDC ? dc_upper : na, "Donchian Upper", color=color.blue)
+p2 = plot(showDC ? dc_lower : na, "Donchian Lower", color=color.blue)
+fill(p1, p2, color=color.new(color.blue, 90), title="Donchian Channel")
+
+plot(use_filter and filter_type == "RSI" ? rsi : na, "RSI (Data Window)", color=color.purple, display=display.data_window)
+
+// Garis SL/TP aktif — untuk verifikasi visual bahwa proteksi memang ada sejak awal
+plot(strategy.position_size > 0 and use_sl ? lgSL : na, "Long SL",  color=color.red,  style=plot.style_linebr)
+plot(strategy.position_size > 0 and use_tp ? lgTP : na, "Long TP",  color=color.teal, style=plot.style_linebr)
+plot(strategy.position_size < 0 and use_sl ? shSL : na, "Short SL", color=color.red,  style=plot.style_linebr)
+plot(strategy.position_size < 0 and use_tp ? shTP : na, "Short TP", color=color.teal, style=plot.style_linebr)
+
+// FIX: S/R lines — hapus yang TERTUA, bukan yang baru dibuat
+var line[] srLines = array.new_line()
+addSR(y, col) =>
+    ln = line.new(bar_index - n_value + 1, y, bar_index + 10, y, color=col, style=line.style_dashed, width=1, extend=extend.right)
+    array.push(srLines, ln)
+    if array.size(srLines) > max_lines
+        line.delete(array.shift(srLines))
+
+if show_sr and bullish_reversal()
+    addSR(high[n_value - 1], color.green)
+if show_sr and bearish_reversal()
+    addSR(low[n_value - 1], color.red)
+
+plotshape(show_signals and long_condition,  "Bull Signal", location=location.belowbar, color=color.green, style=shape.triangleup,   size=size.tiny)
+plotshape(show_signals and short_condition, "Bear Signal", location=location.abovebar, color=color.red,   style=shape.triangledown, size=size.tiny)
