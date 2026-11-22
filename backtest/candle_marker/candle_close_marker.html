@@ -1,0 +1,154 @@
+<title>Penanda Close Candle Terbesar</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: chart first (the answer), then the measured ranges, then editable OHLC to test other cases. */
+:root{
+  --bg:#f3f4f6; --surface:#ffffff; --fg:#151a22; --muted:#5b6472; --line:#e0e4ea; --grid:#eceff3;
+  --bull:#12945f; --bear:#d1433f; --mark:#b07800; --mark-soft:#f7ecd0;
+  --f-display:"Space Grotesk",ui-sans-serif,system-ui,sans-serif;
+  --f-body:"Inter",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0f1217; --surface:#171c23; --fg:#e8ebf0; --muted:#9aa3b1; --line:#283039; --grid:#1f252d;
+  --bull:#2bb67a; --bear:#ec615c; --mark:#e9b949; --mark-soft:#2c2513; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f1217; --surface:#171c23; --fg:#e8ebf0; --muted:#9aa3b1; --line:#283039; --grid:#1f252d;
+  --bull:#2bb67a; --bear:#ec615c; --mark:#e9b949; --mark-soft:#2c2513; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:15px;line-height:1.55;margin:0}
+.wrap{max-width:900px;margin:0 auto;padding-block:36px 64px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:grid;gap:22px}
+h1{font-family:var(--f-display);font-size:clamp(26px,4.4vw,38px);line-height:1.15;letter-spacing:-.02em;margin:0;text-wrap:balance}
+h2{font-family:var(--f-display);font-size:18px;margin:0}
+p{margin:0;max-width:68ch}
+.muted{color:var(--muted)}
+.eyebrow{font-family:var(--f-mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--mark)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px;min-width:0}
+.result{display:flex;flex-wrap:wrap;gap:10px 28px;align-items:baseline}
+.result .big{font-family:var(--f-display);font-size:30px;font-weight:600;font-variant-numeric:tabular-nums}
+.result .lbl{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block}
+svg{display:block;width:100%;height:auto}
+svg text{font-family:var(--f-mono)}
+.tablewrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+th{font-size:12px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+th:first-child,td:first-child{text-align:left}
+td{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+tr.win td{background:var(--mark-soft)}
+.chip{display:inline-block;font-family:var(--f-body);font-size:12px;font-weight:600;padding:1px 8px;border-radius:999px;border:1px solid currentColor}
+.chip.bull{color:var(--bull)} .chip.bear{color:var(--bear)} .chip.mark{color:var(--mark)}
+input{font-family:var(--f-mono);font-size:14px;width:96px;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg);text-align:right}
+input:focus-visible,button:focus-visible{outline:2px solid var(--mark);outline-offset:1px}
+input[aria-invalid="true"]{border-color:var(--bear)}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+button{font:inherit;font-size:14px;padding:7px 14px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--fg);cursor:pointer}
+button:hover{border-color:var(--mark)}
+.err{color:var(--bear);font-size:13px}
+.rule{font-size:14px;color:var(--muted)}
+.rule code{font-family:var(--f-mono);color:var(--fg)}
+</style>
+
+<div class="wrap">
+  <div style="display:grid;gap:8px">
+    <span class="eyebrow">Pola 3 candle · 2 hijau + 1 merah</span>
+    <h1>Penanda Close Candle Terbesar</h1>
+    <p class="muted">Ukuran candle = panjang total dari ujung wick atas sampai ujung wick bawah (<span style="font-family:var(--f-mono)">High − Low</span>). Candle dengan ukuran terbesar dipilih, lalu harga close-nya ditandai.</p>
+  </div>
+
+  <div class="card result" id="result" aria-live="polite"></div>
+
+  <div class="card"><svg id="chart" viewBox="0 0 860 440" role="img" aria-label="Tiga candle dengan penanda close candle terbesar"></svg></div>
+
+  <div class="card tablewrap">
+    <h2 style="margin-bottom:10px">Ukuran tiap candle</h2>
+    <table id="measure"></table>
+  </div>
+
+  <div class="card" style="display:grid;gap:12px">
+    <h2>Coba angka lain</h2>
+    <p class="rule">Ubah Open, High, Low, Close. Warna candle mengikuti arah: <code>Close &gt; Open</code> hijau, <code>Close &lt; Open</code> merah. Kalau ada dua candle sama besar, yang dipilih yang paling akhir.</p>
+    <div class="tablewrap"><table id="editor"></table></div>
+    <div class="row"><button id="reset" type="button">Kembalikan contoh</button><button id="swap" type="button">Contoh: candle merah terbesar</button><span class="err" id="err"></span></div>
+  </div>
+</div>
+
+<script>
+const EX1 = [
+  {name:'Candle 1', o:4100.00, h:4112.40, l:4096.20, c:4110.30},
+  {name:'Candle 2', o:4110.30, h:4136.80, l:4104.50, c:4131.60},
+  {name:'Candle 3', o:4131.60, h:4138.10, l:4113.70, c:4117.90},
+];
+const EX2 = [
+  {name:'Candle 1', o:4100.00, h:4112.40, l:4096.20, c:4110.30},
+  {name:'Candle 2', o:4110.30, h:4124.80, l:4107.50, c:4121.60},
+  {name:'Candle 3', o:4121.60, h:4129.10, l:4093.70, c:4098.20},
+];
+let C = JSON.parse(JSON.stringify(EX1));
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const f2 = x => Number(x).toLocaleString('id-ID',{minimumFractionDigits:2,maximumFractionDigits:2});
+
+function valid(k){ const c=C[k]; return [c.o,c.h,c.l,c.c].every(Number.isFinite) && c.h>=Math.max(c.o,c.c) && c.l<=Math.min(c.o,c.c); }
+function biggest(){ let bi=0; C.forEach((c,i)=>{ if((c.h-c.l) >= (C[bi].h-C[bi].l)) bi=i; }); return bi; }
+const dir = c => c.c>c.o?'bull':(c.c<c.o?'bear':'doji');
+const dirTxt = {bull:'Hijau',bear:'Merah',doji:'Doji'};
+
+function draw(){
+  const bad = C.map((_,i)=>!valid(i)); document.getElementById('err').textContent = bad.some(Boolean) ? 'High harus ≥ Open dan Close, Low harus ≤ Open dan Close.' : '';
+  if(bad.some(Boolean)) return;
+  const bi = biggest(), B = C[bi];
+  const bull=css('--bull'), bear=css('--bear'), fg=css('--fg'), mu=css('--muted'), grid=css('--grid'), mark=css('--mark'), surf=css('--surface');
+  const W=860,H=440,pl=20,pr=96,pt=24,pb=48;
+  let lo=Math.min(...C.map(c=>c.l)), hi=Math.max(...C.map(c=>c.h)); const pad=(hi-lo)*0.12; lo-=pad; hi+=pad;
+  const y=v=>pt+(hi-v)/(hi-lo)*(H-pt-pb); const slot=(W-pl-pr)/3; const x=i=>pl+slot*(i+0.5); const bw=Math.min(84,slot*0.42);
+  let s='';
+  const ticks=5, step=(hi-lo)/ticks;
+  for(let k=0;k<=ticks;k++){ const v=lo+step*k; s+=`<line x1="${pl}" x2="${W-pr}" y1="${y(v)}" y2="${y(v)}" stroke="${grid}" stroke-width="1"/><text x="${W-pr+10}" y="${y(v)+4}" font-size="12" fill="${mu}">${f2(v)}</text>`; }
+  // close marker line across to axis
+  s+=`<line x1="${x(bi)}" x2="${W-pr}" y1="${y(B.c)}" y2="${y(B.c)}" stroke="${mark}" stroke-width="2" stroke-dasharray="7 5"/>`;
+  C.forEach((c,i)=>{
+    const col = dir(c)==='bear'?bear:bull; const top=y(Math.max(c.o,c.c)), bot=y(Math.min(c.o,c.c));
+    if(i===bi) s+=`<rect x="${x(i)-bw/2-14}" y="${y(c.h)-10}" width="${bw+28}" height="${y(c.l)-y(c.h)+20}" rx="10" fill="none" stroke="${mark}" stroke-width="1.5" stroke-dasharray="3 4"/>`;
+    s+=`<line x1="${x(i)}" x2="${x(i)}" y1="${y(c.h)}" y2="${y(c.l)}" stroke="${col}" stroke-width="3" stroke-linecap="round"/>`;
+    s+=`<rect x="${x(i)-bw/2}" y="${top}" width="${bw}" height="${Math.max(2,bot-top)}" rx="3" fill="${col}"><title>${c.name}: O ${f2(c.o)} H ${f2(c.h)} L ${f2(c.l)} C ${f2(c.c)} | ukuran ${f2(c.h-c.l)}</title></rect>`;
+    // range bracket on the left of each candle
+    const bx=x(i)-bw/2-26; s+=`<path d="M${bx+6},${y(c.h)} H${bx} V${y(c.l)} H${bx+6}" fill="none" stroke="${i===bi?mark:mu}" stroke-width="1.5"/>`;
+    s+=`<text x="${x(i)}" y="${H-pb+22}" font-size="13" fill="${fg}" text-anchor="middle">${c.name}</text>`;
+    s+=`<text x="${x(i)}" y="${H-pb+38}" font-size="12" fill="${i===bi?mark:mu}" text-anchor="middle">ukuran ${f2(c.h-c.l)}</text>`;
+  });
+  // close point marker
+  const cx=x(bi)+bw/2, cy=y(B.c);
+  s+=`<circle cx="${cx}" cy="${cy}" r="8" fill="${mark}" stroke="${surf}" stroke-width="3"><title>Close candle terbesar: ${f2(B.c)}</title></circle>`;
+  const lx=W-pr+4; s+=`<rect x="${lx}" y="${cy-13}" width="${pr-6}" height="26" rx="5" fill="${mark}"/><text x="${lx+(pr-6)/2}" y="${cy+5}" font-size="13" font-weight="600" fill="${surf}" text-anchor="middle">${f2(B.c)}</text>`;
+  s+=`<text x="${cx+14}" y="${cy-14}" font-size="12" fill="${mark}" font-weight="600">CLOSE</text>`;
+  document.getElementById('chart').innerHTML=s;
+
+  document.getElementById('result').innerHTML =
+    `<div><span class="lbl">Candle terbesar</span><span class="big">${B.name}</span></div>`+
+    `<div><span class="lbl">Ukuran (High − Low)</span><span class="big">${f2(B.h-B.l)}</span></div>`+
+    `<div><span class="lbl">Close yang ditandai</span><span class="big" style="color:var(--mark)">${f2(B.c)}</span></div>`+
+    `<div><span class="lbl">Warna</span><span class="chip ${dir(B)}">${dirTxt[dir(B)]}</span></div>`;
+
+  document.getElementById('measure').innerHTML = '<thead><tr><th>Candle</th><th>Warna</th><th>High</th><th>Low</th><th>Ukuran</th><th>Body</th><th>Close</th></tr></thead><tbody>'+
+    C.map((c,i)=>`<tr class="${i===bi?'win':''}"><td>${c.name}${i===bi?' <span class="chip mark">terbesar</span>':''}</td><td><span class="chip ${dir(c)}">${dirTxt[dir(c)]}</span></td><td>${f2(c.h)}</td><td>${f2(c.l)}</td><td><b>${f2(c.h-c.l)}</b></td><td>${f2(Math.abs(c.c-c.o))}</td><td>${f2(c.c)}</td></tr>`).join('')+'</tbody>';
+}
+
+function buildEditor(){
+  const t=document.getElementById('editor');
+  t.innerHTML='<thead><tr><th>Candle</th><th>Open</th><th>High</th><th>Low</th><th>Close</th></tr></thead><tbody>'+
+    C.map((c,i)=>`<tr><td style="font-family:var(--f-body)">${c.name}</td>`+['o','h','l','c'].map(k=>`<td><input id="in-${i}-${k}" type="number" step="0.01" inputmode="decimal" value="${c[k].toFixed(2)}" aria-label="${c.name} ${({o:'Open',h:'High',l:'Low',c:'Close'})[k]}"></td>`).join('')+'</tr>').join('')+'</tbody>';
+  t.querySelectorAll('input').forEach(inp=>inp.addEventListener('input',()=>{
+    const [,i,k]=inp.id.split('-'); C[+i][k]=parseFloat(inp.value);
+    t.querySelectorAll(`input[id^="in-${i}-"]`).forEach(x=>x.setAttribute('aria-invalid', valid(+i)?'false':'true'));
+    draw();
+  }));
+}
+function load(ex){ C=JSON.parse(JSON.stringify(ex)); buildEditor(); draw(); }
+document.getElementById('reset').addEventListener('click',()=>load(EX1));
+document.getElementById('swap').addEventListener('click',()=>load(EX2));
+load(EX1);
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change',draw);
+new MutationObserver(draw).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
+</script>
