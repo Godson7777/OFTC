@@ -20,7 +20,7 @@ def cross(p0, p1, lvl, kind):
         if p1 <= lvl: return lvl
     return None
 
-def run(mode='normal', rr=3.0, slip=0.05, comm=0.07, min_risk=0.0):
+def run(mode='normal', rr=3.0, slip=0.05, comm=0.07, min_risk=0.0, sl_mode='open_or_wick', buf=0.0, ebuf=0.0):
     out = []; order = None; pos = None
     for i in range(3, len(d)):
         if (H[i] - O[i]) <= (O[i] - L[i]): path = [O[i], H[i], L[i], C[i]]
@@ -63,7 +63,10 @@ def run(mode='normal', rr=3.0, slip=0.05, comm=0.07, min_risk=0.0):
                 for j in (i - 1, i):
                     if H[j] - L[j] >= H[k] - L[k]: k = j
                 ent = C[k]
-                sl = (O[k] if O[k] < C[k] else L[k]) if s > 0 else (O[k] if O[k] > C[k] else H[k])
+                if sl_mode == 'wick':   sl = L[k] if s > 0 else H[k]
+                elif sl_mode == 'ext3': sl = L[i - 2:i + 1].min() if s > 0 else H[i - 2:i + 1].max()
+                else:                   sl = (O[k] if O[k] < C[k] else L[k]) if s > 0 else (O[k] if O[k] > C[k] else H[k])
+                sl -= s * buf; ent = ent + s * ebuf
                 risk = abs(ent - sl)
                 if risk > max(0.01, min_risk):
                     typ = ('stop' if C[i] < ent else 'limit') if s > 0 else ('stop' if C[i] > ent else 'limit')
