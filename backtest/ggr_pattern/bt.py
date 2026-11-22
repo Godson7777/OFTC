@@ -29,17 +29,17 @@ def run(mode='normal', rr=3.0, slip=0.05, comm=0.07, min_risk=0.0, sl_mode='open
         while seg < 3:
             p1 = path[seg + 1]
             if pos is None and order is not None:
-                s, ent, sl, tp, typ = order
+                s, ent, sl, tp, typ, pi = order
                 kind = ('up' if s > 0 else 'dn') if typ == 'stop' else ('dn' if s > 0 else 'up')
                 f = cross(p0, p1, ent, kind)
                 if f is None: p0 = p1; seg += 1; continue
                 ep = f + (slip * s if typ == 'stop' else 0)
-                pos = dict(s=s, ep=ep, sl=sl, tp=tp, risk=abs(ent - sl), ei=i, typ=typ, cost=SP[i] + comm + (slip if typ == 'stop' else 0)); order = None
+                pos = dict(pi=pi, s=s, ep=ep, sl=sl, tp=tp, risk=abs(ent - sl), ei=i, typ=typ, cost=SP[i] + comm + (slip if typ == 'stop' else 0)); order = None
                 p0 = f
                 if mode == 'pess':   # rest of this bar: adverse extreme first
                     adverse = L[i] if s > 0 else H[i]
                     if (s > 0 and adverse <= sl) or (s < 0 and adverse >= sl):
-                        out.append((i, i, s, ((sl - slip * s - ep) * s - pos['cost']) / pos['risk'], 'SL', typ)); pos = None
+                        out.append((i, i, s, ((sl - slip * s - ep) * s - pos['cost']) / pos['risk'], 'SL', typ, pos['pi'])); pos = None
                     break            # no same-bar TP in pessimistic mode
                 continue
             if pos is not None:
@@ -49,7 +49,7 @@ def run(mode='normal', rr=3.0, slip=0.05, comm=0.07, min_risk=0.0, sl_mode='open
                 if cand:
                     _, f, w = min(cand)
                     px = f - (slip * s if w == 'SL' else 0)
-                    out.append((pos['ei'], i, s, ((px - pos['ep']) * s - pos['cost']) / pos['risk'], w, pos['typ'])); pos = None
+                    out.append((pos['ei'], i, s, ((px - pos['ep']) * s - pos['cost']) / pos['risk'], w, pos['typ'], pos['pi'])); pos = None
                     break            # SOP: nothing else on the exit bar
             p0 = p1; seg += 1
         if mode == 'pess' and pos is not None and pos['ei'] < i:
@@ -70,8 +70,8 @@ def run(mode='normal', rr=3.0, slip=0.05, comm=0.07, min_risk=0.0, sl_mode='open
                 risk = abs(ent - sl)
                 if risk > max(0.01, min_risk):
                     typ = ('stop' if C[i] < ent else 'limit') if s > 0 else ('stop' if C[i] > ent else 'limit')
-                    order = (s, ent, sl, ent + s * rr * risk, typ)
-    return pd.DataFrame(out, columns=['ei', 'xi', 'side', 'R', 'why', 'typ'])
+                    order = (s, ent, sl, ent + s * rr * risk, typ, i)
+    return pd.DataFrame(out, columns=['ei', 'xi', 'side', 'R', 'why', 'typ', 'pi'])
 
 def stats(t, name, show=True):
     t = t.copy(); t['tout'] = idx[t.xi]; yrs = (idx[-1] - idx[0]).days / 365.25
