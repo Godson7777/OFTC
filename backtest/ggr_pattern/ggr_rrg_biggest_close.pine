@@ -1,0 +1,117 @@
+//@version=5
+// GGR / RRG Biggest-Candle Close Strategy (H1)
+// Aturan:
+//  - Pola hijau, hijau, merah (berurutan) = BUY. Pola merah, merah, hijau = SELL.
+//  - Candle terbesar = High - Low terbesar dari 3 candle pola (jika sama besar, ambil yang paling akhir).
+//  - Entry = CLOSE candle terbesar.
+//  - SL = OPEN candle terbesar jika berada di sisi rugi; jika tidak (candle terbesar berlawanan arah),
+//         SL = wick terbawah (LOW) untuk BUY, wick teratas (HIGH) untuk SELL.
+//  - TP = entry +/- RR x jarak SL (default 1:3).
+//  - Jenis pending order sesuai posisi harga saat pola selesai:
+//         BUY : harga < entry -> BUY STOP,  harga >= entry -> BUY LIMIT
+//         SELL: harga > entry -> SELL STOP, harga <= entry -> SELL LIMIT
+//  - Pola baru sebelum order ter-trigger -> order lama dibatalkan, pasang order dari pola terbaru.
+//  - Saat posisi sedang terbuka, pola baru diabaikan.
+strategy("GGR/RRG Biggest Close", shorttitle="GGR-RRG", overlay=true,
+     initial_capital=10000, pyramiding=0,
+     calc_on_order_fills=false, calc_on_every_tick=false, process_orders_on_close=false,
+     max_labels_count=500)
+
+// ---------------- Inputs ----------------
+rr        = input.float(3.0, "Risk:Reward (TP = x jarak SL)", minval=0.5, step=0.5)
+riskPct   = input.float(1.0, "Risiko per trade (% equity)", minval=0.05, step=0.05)
+minSL     = input.float(0.0, "Jarak SL minimum (harga), 0 = semua", minval=0.0, step=0.5, tooltip="Contoh XAUUSD: 2.0 = lewati pola dengan SL lebih dekat dari $2. Backtest menunjukkan SL yang sangat kecil termakan spread.")
+showLevels = input.bool(true, "Tampilkan garis entry / SL / TP")
+showLabels = input.bool(true, "Tampilkan label order")
+
+// ---------------- Pattern ----------------
+isG(k) => close[k] > open[k]
+isR(k) => close[k] < open[k]
+buyPat  = isG(2) and isG(1) and isR(0)
+sellPat = isR(2) and isR(1) and isG(0)
+
+r0 = high - low
+r1 = high[1] - low[1]
+r2 = high[2] - low[2]
+int k = r0 >= r1 and r0 >= r2 ? 0 : r1 >= r2 ? 1 : 2      // candle terbesar, seri -> yang terakhir
+
+bigO = open[k]
+bigH = high[k]
+bigL = low[k]
+bigC = close[k]
+
+entryPx = bigC
+slBuy   = bigO < bigC ? bigO : bigL
+slSell  = bigO > bigC ? bigO : bigH
+
+// ---------------- State ----------------
+var int   pendDir   = 0       // 1 buy, -1 sell, 0 none
+var float pendEntry = na
+var float pendSL    = na
+var float pendTP    = na
+var bool  pendStop  = false
+var float actSL     = na
+var float actTP     = na
+var float actEntry  = na
+
+qtyFor(riskDist) =>
+    riskDist > 0 ? strategy.equity * riskPct / 100.0 / (riskDist * syminfo.pointvalue) : na
+
+// pending order filled -> it becomes the active position
+if strategy.position_size != 0 and pendDir != 0
+    actEntry := pendEntry
+    actSL    := pendSL
+    actTP    := pendTP
+    pendDir  := 0
+if strategy.position_size == 0 and pendDir == 0
+    actEntry := na
+    actSL    := na
+    actTP    := na
+
+flat = strategy.position_size == 0
+
+if flat and (buyPat or sellPat)
+    float sl   = buyPat ? slBuy : slSell
+    float risk = math.abs(entryPx - sl)
+    if risk > math.max(minSL, syminfo.mintick)
+        int   dir = buyPat ? 1 : -1
+        float tp  = entryPx + dir * rr * risk
+        bool  useStop = dir == 1 ? close < entryPx : close > entryPx
+        float q = qtyFor(risk)
+        // newest pattern wins: cancel any untriggered order
+        strategy.cancel("Long")
+        strategy.cancel("Short")
+        if dir == 1
+            if useStop
+                strategy.entry("Long", strategy.long, qty=q, stop=entryPx)
+            else
+                strategy.entry("Long", strategy.long, qty=q, limit=entryPx)
+            strategy.exit("Long SL/TP", from_entry="Long", stop=sl, limit=tp)
+        else
+            if useStop
+                strategy.entry("Short", strategy.short, qty=q, stop=entryPx)
+            else
+                strategy.entry("Short", strategy.short, qty=q, limit=entryPx)
+            strategy.exit("Short SL/TP", from_entry="Short", stop=sl, limit=tp)
+        pendDir   := dir
+        pendEntry := entryPx
+        pendSL    := sl
+        pendTP    := tp
+        pendStop  := useStop
+        if showLabels
+            string kind = (dir == 1 ? "BUY " : "SELL ") + (useStop ? "STOP" : "LIMIT")
+            label.new(bar_index - k, entryPx, kind + "\n" + str.tostring(entryPx, format.mintick),
+                 style = dir == 1 ? label.style_label_up : label.style_label_down,
+                 color = dir == 1 ? color.new(color.teal, 0) : color.new(color.red, 0),
+                 textcolor = color.white, size = size.small,
+                 yloc = dir == 1 ? yloc.belowbar : yloc.abovebar)
+
+// ---------------- Visuals ----------------
+lvlEntry = flat ? (pendDir != 0 ? pendEntry : na) : actEntry
+lvlSL    = flat ? (pendDir != 0 ? pendSL    : na) : actSL
+lvlTP    = flat ? (pendDir != 0 ? pendTP    : na) : actTP
+plot(showLevels ? lvlEntry : na, "Entry", color=color.new(color.orange, 0), style=plot.style_linebr, linewidth=2)
+plot(showLevels ? lvlSL    : na, "SL",    color=color.new(color.red,    0), style=plot.style_linebr, linewidth=1)
+plot(showLevels ? lvlTP    : na, "TP",    color=color.new(color.teal,   0), style=plot.style_linebr, linewidth=1)
+plotshape(buyPat,  "Pola GGR (buy)",  shape.triangleup,   location.belowbar, color.new(color.teal, 40), size=size.tiny)
+plotshape(sellPat, "Pola RRG (sell)", shape.triangledown, location.abovebar, color.new(color.red,  40), size=size.tiny)
